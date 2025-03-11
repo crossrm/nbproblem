@@ -1,0 +1,10 @@
+# ignore all files
+# also .dta files 
+*.ster
+*.dta
+*.csv
+*.fig
+*.tex
+*stats.txt
+*.xml
+
