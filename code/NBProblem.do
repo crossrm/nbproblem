@@ -5,10 +5,13 @@
 ** Goal: 	Replicate results in "Conservation of capital"
 
 ** Inputs:	User settings (see options below)			
-**			rore_public_main.dta from Jorda et al. 2017 "Rate of return on everything" QJE 
-**			rore_public_supplement.dta, ibid up
-**			https://shillerdata.com/
-** 			Moura MC, Smith SJ, Belzer DB. 120 Years of U.S. Residential Housing Stock and Floor Space. PLoS One. 2015 Aug 11;10(8):e0134135. doi: 10.1371/journal.pone.0134135. PMID: 26263391; PMCID: PMC4532357.
+**			returns - rore_public_main.dta from Jorda et al. 2017 "Rate of return on everything" QJE 
+**			returns - rore_public_supplement.dta, ibid up
+**			bonds and equity - https://shillerdata.com/
+** 			housing - Moura MC, Smith SJ, Belzer DB. 120 Years of U.S. Residential Housing Stock and Floor Space. PLoS One. 2015 Aug 11;10(8):e0134135. doi: 10.1371/journal.pone.0134135. PMID: 26263391; PMCID: PMC4532357.
+**			market cap - Kuvshinov 2022 - The big bang - https://doi.org/10.1016/j.jfineco.2021.09.008
+**			market cap - Siblis data https://siblisresearch.com/data/us-stock-market-value/
+**			treasuries - Treasury debt outstanding - https://fiscaldata.treasury.gov/datasets/historical-debt-outstanding/historical-debt-outstanding
 ** Outputs: 
 **		Jobs program
 
@@ -105,7 +108,7 @@ if prep == 1 {
 	if load == 1 {
 		
 		****************
-		** Jorda
+		** Jorda - returns on everything
 		****************
 		scalar jorda = 1
 		if jorda == 1 {
@@ -126,7 +129,7 @@ if prep == 1 {
 
 			** Keep
 			keep if iso=="USA"
-			keep country year pop gdp cpi inflation tax_statutory tax_bsrate tax_inc_eq
+			keep country year pop gdp cpi inflation 
 			
 			** Join
 			cd_nb_stage
@@ -145,7 +148,10 @@ if prep == 1 {
 		
 			** Inflation adjust
 			gen rr_bond		= r_bond - r_infl
-				
+			
+			** Drop 
+			drop country
+			
 			** Stage
 			cd_nb_stage
 			save jorda_data, replace
@@ -153,8 +159,77 @@ if prep == 1 {
 		} //end if
 		di "Done with Jorda data."
 		
+		***************
+		** Kuvshinov - 1899-2016 - equity market cap
+		** Siblis 2017-2024
+		***************
+		scalar kuv = 1
+		if kuv == 1 {
+			
+			** Load
+			cd_nb_source
+			use Kuvshinov2022_BBdatasetR1, clear
+			
+			** Select
+			keep if iso == "USA"
+			keep year mcap
+			keep if mcap!=.
+			
+			** Save
+			cd_nb_stage
+			save Kuv_data, replace
+		
+			** Open Sib data
+			cd_nb_source
+			import excel "MarketCap_WB1975_Sib2016.xlsx", sheet("Siblisresearch") firstrow clear
+			keep Year mcap
+			renvars *, lower
+			order year mcap
+			rename mcap mcapsib
+			
+			** Join and merge
+			cd_nb_stage
+			joinby year using Kuv_data, unmatched(both)
+				tab _merge
+				drop _merge
+
+			** Merge
+			replace mcap 				= mcap * 1000 //convert to millions
+			replace mcapsib				= mcap if mcap!=.
+			drop mcap
+			rename mcapsib mcap
+			replace mcap 				= mcap / 1000 //convert back to billions
+			
+			** Save
+			cd_nb_stage
+			save equity_cap, replace
+		
+		} //end if
+		di "Done with Kuvshinov data."
+		
+		***************
+		** Treasury - debt outstanding 
+		***************
+		scalar treas = 1
+		if treas == 1 {
+			
+			** Open Treas data
+			cd_nb_source
+			import excel "TreasuryDebt", sheet("Debt") firstrow clear
+			keep year DebtOut
+			renvars *, lower
+			order year debtout
+			destring *, replace
+			
+			** Save
+			cd_nb_stage
+			save debt_out, replace
+		
+		} //end if
+		di "Done with treas data."
+		
 		****************
-		** Shiller
+		** Shiller - bonds, equities, housing prices
 		****************
 		scalar shiller = 1
 		if shiller == 1 {
@@ -187,7 +262,7 @@ if prep == 1 {
 			cd_nb_stage
 			save shiller_data, replace
 			
-			** Prep Shiller housing data
+			** Prep Shiller housing price index (2000 January == 100)
 			cd_nb_shiller
 			import excel "Fig3-1 (1).xls", sheet("Data") cellrange(H7:J999) firstrow clear
 			
@@ -204,7 +279,7 @@ if prep == 1 {
 			gen check 					= 1/0.04166667
 			
 			** Make nominal -- multiply by 2000 mean house price $119,600 (US 2000 Census)
-			replace house_price			= house_price * 119600
+			replace house_price			= house_price * 119600 / 100
 			
 			** Order and save
 			order year month house_price source 
@@ -216,7 +291,7 @@ if prep == 1 {
 		di "Done with Jorda data."
 		
 		****************
-		** Housing units
+		** Moura - housing units
 		****************
 		scalar units = 1
 		if units == 1 {
@@ -344,21 +419,79 @@ if prep == 1 {
 			cd_nb_stage
 			save housing_units, replace
 			
-			** Join Shiller price
+			** Join housing returns
 			cd_nb_stage
 			joinby year month using shiller_housing, unmatch(master)
 				tab _merge
 				drop _merge
-				
+					
+			** Make w_house here
+			** Sort and fill and divide and drop
+			** Keep house price for r_house at last join!
+			** Check the old FRED monthly rents...
+			asdf
+			
 			** Save
 			cd_nb_stage
-			save housing_data2023, replace
+			save housing_data, replace
 									
 		} //end if
 		di "Done with Moura data."
 		
-		
-		
+		****************
+		** Join all
+		****************
+		scalar all = 1
+		if all == 1 {
+			
+			** Start with housing units (most complete monthly)
+			cd_nb_stage
+			use housing_data, clear
+			
+			** Join equity market cap w_equity
+			cd_nb_stage
+			joinby year using equity_cap, unmatched(master)
+				tab _merge
+				drop _merge
+			
+			** Naming (billions)
+			rename mcap w_eq
+						
+			** Join debt outstanding w_debt
+			cd_nb_stage
+			joinby year using debt_out, unmatched(master)
+				tab _merge
+				drop _merge
+			
+			** Naming - billions
+			rename debtout w_bond
+			replace w_bond				= w_bond / 1000000000 // convert to billions
+			
+			** Join stock bond returns
+			cd_nb_stage
+			joinby year month using shiller_data, unmatched(both)
+				tab _merge
+				drop _merge
+				
+			** Join house price imputed
+			rename r_bond r_bond_shill
+			cd_nb_stage
+			joinby year using jorda_data, unmatched(both)
+				tab _merge
+				drop _merge
+			
+			** Select
+			drop r_bond
+			rename r_bond_shill r_bond
+			
+			here_go back and fill in r_house
+			** Need pop, gdp, cpi (monthly), rent (monthly), 
+			
+			
+			
+			
+		} //end if
+		di "Done with join for analysis."
 		
 				
 	} //End if
