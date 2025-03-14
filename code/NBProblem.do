@@ -108,6 +108,115 @@ if prep == 1 {
 	if load == 1 {
 		
 		****************
+		** Economic stats
+		****************
+		scalar econ = 1
+		if econ == 1 {
+				
+			*******************
+			** CPI
+			*******************
+			scalar cpi = 1
+			if cpi == 1 {
+				
+				** Prep cpi historical	
+				cd_nb_source
+				import excel "rent_cpi_gdp_pop_source3.12.25.xlsx", sheet("CPIHistAnnual") cellrange(A1:B226) firstrow clear
+				
+				** Clean and prep
+				destring *, replace
+				gen month								= 12
+				rename cpi cpi_hist
+				
+				** Save for join
+				cd_nb_stage
+				save cpi_hist, replace
+					
+				** Prep cpi monthly
+				cd_nb_source
+				import excel "rent_cpi_gdp_pop_source3.12.25.xlsx", sheet("CPIMonthly") cellrange(B1:D1429) firstrow clear
+				
+				** Clean up
+				renvars *, lower
+				drop if period == "S01"
+				drop if period == "S02"
+				destring *, replace
+				rename period month
+				rename value cpi
+				
+				** Add historical annual
+				cd_nb_stage
+				joinby year month using cpi_hist, unmatched(both)
+					tab _merge
+					drop _merge
+				
+				** Fill missing years
+				** Scale
+				sort year month
+				gen ratio				= cpi_hist / cpi
+				replace cpi 			= cpi_hist / 2.97 if cpi ==.	// 1913 ratio
+				
+				** Calc inflation
+				sort year month
+				gen obs 				= _n
+				sort obs
+				tsset obs
+				gen inflation_mo		= ( cpi - L12.cpi ) / L12.cpi
+				gen inflation_ann		= ( cpi - L1.cpi ) / L1.cpi
+				gen inflation 			= .
+				replace inflation 		= inflation_ann if year <= 1912
+				replace inflation 		= inflation_mo if inflation == .
+				replace inflation 		= inflation * 100
+				rename inflation r_price
+				
+				** Save
+				keep year month cpi r_price
+				cd_nb_stage
+				save cpi_monthly, replace
+					
+			} //end if
+			di "Done with cpi."
+					
+			*******************
+			** Pop + Rent + GDP
+			*******************
+			scalar pop = 1
+			if pop == 1 {
+				
+				** Prep pop monthly
+				cd_nb_source
+				import excel "rent_cpi_gdp_pop_source3.12.25.xlsx", sheet("POPmonthly1959") cellrange(B1:D794) firstrow clear
+				rename POPTHM pop_monthly
+				** Save for join
+				cd_nb_stage
+				save pop_monthly, replace
+					
+				** Prep rent monthly
+				cd_nb_source
+				import excel "rent_cpi_gdp_pop_source3.12.25.xlsx", sheet("rent_index") cellrange(B1:D1324) firstrow clear
+				** Adjust for December 2024 SFR rental Rate (Yardi SFR December 2024)
+				sum rent_index if year==2024 & month==12
+				local MFI		= r(mean)
+				replace rent_index 				= rent_index / `MFI' * 1742
+				** Save for join
+				cd_nb_stage
+				save rent_index, replace
+				
+				** Prep gdp annual
+				cd_nb_source
+				import excel "rent_cpi_gdp_pop_source3.12.25.xlsx", sheet("GDPannual1947") cellrange(B1:C79) firstrow clear
+				** Adjust for December 2024 multi-family rental Rate (Yardi MultiFamily December 2024)
+				** Save for join
+				cd_nb_stage
+				save gdp_data, replace
+					
+			} //end if
+			di "Done with pop, rent, and GDP."		
+											
+		} //end if
+		di "Done with Econ stats data."
+		
+		****************
 		** Jorda - returns on everything
 		****************
 		scalar jorda = 1
@@ -119,43 +228,64 @@ if prep == 1 {
 
 			** Keep
 			keep if iso=="USA"
-			keep country year housing_rent_yd bond_rate
-			cd_nb_stage
-			save jorda_main, replace
-			
-			** Load supplement and join
-			cd_nb_jorda
-			use rore_public_supplement, clear
-
-			** Keep
-			keep if iso=="USA"
-			keep country year pop gdp cpi inflation 
-			
-			** Join
-			cd_nb_stage
-			joinby country year using jorda_main, unmatched(master)
-				tabulate _merge
-				drop _merge
-				
-			** Rename
+			order	year housing_rent_yd bond_rate
+			keep 	year housing_rent_yd bond_rate
 			rename housing_rent_yd r_house
 			rename bond_rate r_bond
-			rename inflation r_infl
 			
-			** Gen population growth rate
-			tsset year
-			gen r_pop		= (pop - l.pop) / l.pop
-		
-			** Inflation adjust
-			gen rr_bond		= r_bond - r_infl
-			
-			** Drop 
-			drop country
-			
-			** Stage
+			** Save for join
 			cd_nb_stage
-			save jorda_data, replace
+			save jorda_main, replace
+						
+			****************************
+			** Load supplement and join
+			****************************
+			scalar sup = 1
+			if sup == 1 {
+					
+				** Load jorda supplement
+				cd_nb_jorda
+				use rore_public_supplement, clear
+
+				** Keep
+				keep if iso=="USA"
+				keep year pop cpi gdp
+				
+				** Join
+				cd_nb_stage
+				joinby year using jorda_main, unmatched(master)
+					tabulate _merge
+					drop _merge
+					
+				** Rename
+				//rename housing_rent_yd r_house
+				//rename bond_rate r_bond
+				//rename inflation r_infl
+				
+				** Gen population growth rate
+				//tsset year
+				//gen r_pop		= (pop - l.pop) / l.pop
 			
+				** Inflation adjust
+				//gen rr_bond		= r_bond - r_infl
+				
+				** Drop 
+				//drop country
+				
+			} //end if
+			di "Done with sup data."
+			
+			** Save for monthly-fill-in join
+			cd_nb_stage
+			save jorda_monthly_join, replace
+						
+			** Save for annual-only join
+			keep year r_house 
+			gen month				= 12
+			order year month r_house
+			cd_nb_stage
+			save jorda_annual_join, replace
+						
 		} //end if
 		di "Done with Jorda data."
 		
@@ -429,9 +559,33 @@ if prep == 1 {
 			** Sort and fill and divide and drop
 			** Keep house price for r_house at last join!
 			** Check the old FRED monthly rents...
-			asdf
+			
+			** Calc gain
+			sort year month 
+			gen obs								= _n
+			tsset obs
+			gen last_price						= L12.house_price
+			gen gain							= house_price - last_price
+			
+			** Fill gain
+			sort year
+			by year: egen fill_price			= sum(house_price)
+			sort obs
+			gen rev_fill_price					= L12.fill_price
+			sort year
+			by year: egen fill_gain				= sum(gain)
+			gen monthly_fill					= fill_gain / 12 * month if house_price == .
+			replace house_price					= rev_fill_price + monthly_fill if house_price == .
+			replace house_price					= . if house_price==0
+			gen w_house							= house_price * house_units / 1000000000 //billions of dollars
+			
+			** Add master time variable t
+			sort year month
+			gen t								= _n
 			
 			** Save
+			order 	year month t house_price house_units w_house
+			keep	year month t house_price house_units w_house
 			cd_nb_stage
 			save housing_data, replace
 									
@@ -455,7 +609,7 @@ if prep == 1 {
 				drop _merge
 			
 			** Naming (billions)
-			rename mcap w_eq
+			rename mcap w_stock
 						
 			** Join debt outstanding w_debt
 			cd_nb_stage
@@ -473,26 +627,154 @@ if prep == 1 {
 				tab _merge
 				drop _merge
 				
-			** Join house price imputed
-			rename r_bond r_bond_shill
-			cd_nb_stage
-			joinby year using jorda_data, unmatched(both)
+			** Join cpi
+			joinby year month using cpi_monthly, unmatched(both)
 				tab _merge
 				drop _merge
+				
+			** Join pop
+			joinby year month using pop_monthly, unmatched(both)
+				tab _merge
+				drop _merge
+				
+			** Join GDP annual 1947
+			joinby year using gdp_data, unmatched(both)
+				tab _merge
+				drop _merge
+			
+			** Join jorda stats -- fill monthly house price imputed
+			rename r_bond r_bond_shill
+			cd_nb_stage
+			joinby year using jorda_monthly_join, unmatched(both)
+				tab _merge
+				drop _merge
+				
+			** POP
+			replace pop					= pop_monthly if pop_monthly ~=.
+			drop pop_monthly
+			replace gdp 				= GDP if gdp == .
+			drop GDP
 			
 			** Select
 			drop r_bond
 			rename r_bond_shill r_bond
 			
-			here_go back and fill in r_house
-			** Need pop, gdp, cpi (monthly), rent (monthly), 
+			** Join Jorda house annual-only
+			drop r_house
+			cd_nb_stage
+			joinby year month using jorda_annual_join, unmatched(both)
+				tab _merge
+				drop _merge
 			
+			** Join monthly rent index
+			cd_nb_stage
+			joinby year month using rent_index, unmatched(both)
+				tab _merge
+				drop _merge
+				
+			** Order
+			order year month t cpi r_price gdp pop w_stock w_bond w_house r_stock r_bond r_house house_price house_units 
+			keep if house_price ~=.
 			
+			** Save
+			cd_nb_stage
+			save all_join_temp, replace
 			
+			******************************
+			** Monthly variation in rent
+			******************************
+			scalar implied = 1
+			if implied == 1 {
+				
+				** load
+				cd_nb_stage
+				use all_join_temp, clear
+				
+				** Look at implied net rent 
+				gen implied_rent			= house_price * r_house / 12
+				
+				** Interpolate monthly implied inflation
+				** Forecast
+				reg implied_rent c.rent_index##c.rent_index
+				predict index_hat, xb
+				** Calc implied inflation
+				gen obs 					= _n
+				sort obs
+				tsset obs
+				gen implied_gain			= (implied_rent - L12.implied_rent) 
+				gen implied_infl			= implied_gain / L12.implied_rent
+				gen index_infl				= (index_hat - L1.index_hat) / L1.index_hat
+				
+				** Compare annual indexed inflation to implied inflation and correct
+				sort year
+				by year: egen index_ann		= sum(index_infl)
+				by year: egen implied_ann	= sum(implied_infl)
+				drop implied_infl
+				
+				** Scale index inflation
+				gen index_corr				= index_infl / index_ann * implied_ann
+				by year: egen check_impl	= sum(index_corr)
+				drop implied_ann index_ann index_infl
+				
+				** Accumulate and fill
+				by year: gen cumul_index	= sum(index_corr)
+				gen cumul_corr				= cumul_index / check_impl
+				by year: egen gain			= sum(implied_gain)
+				drop check_impl implied_gain cumul_index index_corr
+				
+				** New r_house 
+				sort obs
+				gen LY_implied_rent			= L12.implied_rent
+				sort year
+				by year: egen implied_rent2	= sum(LY_implied_rent)
+				drop LY_implied_rent
+					order month year, last
+				replace implied_rent2		= implied_rent2 + gain * cumul_corr // last year rent, plus the monthly portion of the annual gain
+				drop gain cumul_corr
+				
+				** Drop intermediate months with missing index values
+				gen missing					= 0
+				replace missing				= 1 if rent_index == .
+				sort year
+				by year: egen dropit		= sum(missing)
+				drop if index_hat==. & r_house == .
+				drop if r_house==.   & dropit > 0
+				drop dropit missing
+				
+				** Fill monthly r_house
+				gen implied_rate 			= implied_rent2 * 12 / house_price
+				replace r_house 			= implied_rate if r_house==. & implied_rate ~= .
+				drop implied_rent2 implied_rate
+				
+				** Fill later-years r_house
+				sum implied_rent if year == 2015 & month ==12
+				local impl = r(mean)
+				sum index_hat  if year == 2015 & month ==12
+				local ind = r(mean)
+				di "Scaling `ind' to `impl'."
+				gen implied_rent3 			= index_hat / `ind' * `impl'
+				replace r_house 			= implied_rent3 * 12 / house_price if r_house == . & implied_rent3 ~=.
+				drop implied_rent* index_* rent_index 
+				
+				** Order and keep
+				order	year month t cpi-r_house
+				keep	year month t cpi-r_house
+				
+			} //end if
+			di "Done with monthly variation."
+			
+			** Percentage units
+			replace r_house					= r_house * 100
+			
+			** Set period
+			replace t						= t - 23
+			
+			** Save
+			cd_nb_stage
+			save analysis_data, replace
 			
 		} //end if
 		di "Done with join for analysis."
-		
 				
 	} //End if
 	di "Done with load."
@@ -515,18 +797,16 @@ if runit == 1 {
 		
 		** Load main 
 		cd_nb_stage
-		use jorda_data, clear
+		use analysis_data, clear
+			
+			** Summary stats
+			sum
 			
 			** Graphs
-			graph twoway scatter r_house rr_bond r_pop year if year>= 1900 & year<=1950
-			graph twoway scatter r_house r_bond r_pop year if year>= 1950 & year<=2015
-			graph twoway scatter r_house r_bond r_pop year if year>= 1987 & year<=2015
+			twoway connected r_stock year if year>= 1890 & year<=1950, ms(none) || connected r_bond year if year>= 1890 & year<=1950, ms(none) || connected r_house year if year>= 1890 & year<=1950, ms(none) legend(order(1 "stock" 2 "bond" 3 "house"))  
+			twoway connected r_stock year if year>= 1950 & year<=2000, ms(none) || connected r_bond year if year>= 1950 & year<=2000, ms(none) || connected r_house year if year>= 1950 & year<=2000, ms(none) legend(order(1 "stock" 2 "bond" 3 "house"))  
+			twoway connected r_stock year if year>= 2000 & year<=2024, ms(none) || connected r_bond year if year>= 2000 & year<=2024, ms(none) || connected r_house year if year>= 2000 & year<=2024, ms(none) legend(order(1 "stock" 2 "bond" 3 "house"))  
 			
-		
-		
-		
-		
-		
 	} //End if
 	di "Done with look."
 
