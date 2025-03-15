@@ -116,8 +116,8 @@ if prep == 1 {
 			*******************
 			** CPI
 			*******************
-			scalar cpi = 1
-			if cpi == 1 {
+			scalar infl = 1
+			if infl == 1 {
 				
 				** Prep cpi historical	
 				cd_nb_source
@@ -386,9 +386,15 @@ if prep == 1 {
 			gen r_stock					= e / p * 0.5
 			rename rategs10 r_bond
 			replace r_stock 			= r_stock * 100
+			
+			** Other stats
+			rename d dividend
+			rename e earnings
+			rename p snp500
+			
 			** Keep and save
-			order year month r_stock r_bond
-			keep year month r_stock r_bond
+			order 	year month dividend earnings snp500 cpi r_stock r_bond
+			keep 	year month dividend earnings snp500 cpi r_stock r_bond
 			cd_nb_stage
 			save shiller_data, replace
 			
@@ -444,8 +450,8 @@ if prep == 1 {
 			gen growth						=  house_units - L1.house_units
 			
 			** Order and save
-			order year month house_units growth source 
-			keep year  month house_units	growth
+			order 	year month house_units growth source 
+			keep 	year month house_units growth
 			cd_nb_stage
 			save moura_housing, replace
 			
@@ -520,6 +526,7 @@ if prep == 1 {
 			joinby year using moura_housing, unmatched(master)
 				tab _merge
 				drop _merge
+			gen moura_h_orig			= (month==12 & growth ~= .)
 			
 			** Join seasonal factors - for 1968+
 			cd_nb_stage
@@ -544,8 +551,8 @@ if prep == 1 {
 			replace house_units					= house_units - incompletes 
 			
 			** Save
-			order year month house_units
-			keep  year month house_units
+			order year month moura_h_orig house_units
+			keep  year month moura_h_orig house_units
 			cd_nb_stage
 			save housing_units, replace
 			
@@ -554,6 +561,7 @@ if prep == 1 {
 			joinby year month using shiller_housing, unmatch(master)
 				tab _merge
 				drop _merge
+			gen shill_h_orig				= (month==12 & house_price ~=.)
 					
 			** Make w_house here
 			** Sort and fill and divide and drop
@@ -584,8 +592,8 @@ if prep == 1 {
 			gen t								= _n
 			
 			** Save
-			order 	year month t house_price house_units w_house
-			keep	year month t house_price house_units w_house
+			order 	year month t *_orig house_price house_units w_house
+			keep	year month t *_orig house_price house_units w_house
 			cd_nb_stage
 			save housing_data, replace
 									
@@ -607,6 +615,7 @@ if prep == 1 {
 			joinby year using equity_cap, unmatched(master)
 				tab _merge
 				drop _merge
+			gen equ_cap_orig			= (month==12 & mcap~=.)
 			
 			** Naming (billions)
 			rename mcap w_stock
@@ -616,6 +625,7 @@ if prep == 1 {
 			joinby year using debt_out, unmatched(master)
 				tab _merge
 				drop _merge
+			gen debt_orig				= (month==12 & debtout~=.)
 			
 			** Naming - billions
 			rename debtout w_bond
@@ -628,19 +638,21 @@ if prep == 1 {
 				drop _merge
 				
 			** Join cpi
-			joinby year month using cpi_monthly, unmatched(both)
-				tab _merge
-				drop _merge
+			//joinby year month using cpi_monthly, unmatched(both)
+			//	tab _merge
+			//	drop _merge
 				
 			** Join pop
 			joinby year month using pop_monthly, unmatched(both)
 				tab _merge
 				drop _merge
+			gen pop_orig				= (pop_monthly ~=.)
 				
 			** Join GDP annual 1947
 			joinby year using gdp_data, unmatched(both)
 				tab _merge
 				drop _merge
+			gen gdp_orig				= (month==12 & GDP ~=.)
 			
 			** Join jorda stats -- fill monthly house price imputed
 			rename r_bond r_bond_shill
@@ -648,6 +660,8 @@ if prep == 1 {
 			joinby year using jorda_monthly_join, unmatched(both)
 				tab _merge
 				drop _merge
+			replace month 				= 12 if month==. & year ==1870
+			gen jorda_orig				= (month==12 & r_house~=.)
 				
 			** POP
 			replace pop					= pop_monthly if pop_monthly ~=.
@@ -659,7 +673,7 @@ if prep == 1 {
 			drop r_bond
 			rename r_bond_shill r_bond
 			
-			** Join Jorda house annual-only
+			** Join Jorda house annual-only (drop existing house)
 			drop r_house
 			cd_nb_stage
 			joinby year month using jorda_annual_join, unmatched(both)
@@ -671,10 +685,15 @@ if prep == 1 {
 			joinby year month using rent_index, unmatched(both)
 				tab _merge
 				drop _merge
+			gen rent_cpi_orig			= (rent_index ~=. )
 				
 			** Order
-			order year month t cpi r_price gdp pop w_stock w_bond w_house r_stock r_bond r_house house_price house_units 
-			keep if house_price ~=.
+			order year month t *_orig cpi gdp pop w_stock w_bond w_house r_stock r_bond r_house house_price house_units 
+			gen h_include 				= (house_price ~=.) 
+			
+			** Update t
+			sort year month
+			replace t					= _n
 			
 			** Save
 			cd_nb_stage
@@ -690,17 +709,21 @@ if prep == 1 {
 				cd_nb_stage
 				use all_join_temp, clear
 				
+				** Drop missing data for sums
+				keep if house_price ~=.
+							
 				** Look at implied net rent 
 				gen implied_rent			= house_price * r_house / 12
 				
 				** Interpolate monthly implied inflation
+				sort year month
+				replace t					= _n
 				** Forecast
-				reg implied_rent c.rent_index##c.rent_index
-				predict index_hat, xb
+				reg implied_rent t c.rent_index##c.rent_index 
+				predict index_hat, xb 
 				** Calc implied inflation
-				gen obs 					= _n
-				sort obs
-				tsset obs
+				sort t
+				tsset t
 				gen implied_gain			= (implied_rent - L12.implied_rent) 
 				gen implied_infl			= implied_gain / L12.implied_rent
 				gen index_infl				= (index_hat - L1.index_hat) / L1.index_hat
@@ -723,7 +746,7 @@ if prep == 1 {
 				drop check_impl implied_gain cumul_index index_corr
 				
 				** New r_house 
-				sort obs
+				sort t
 				gen LY_implied_rent			= L12.implied_rent
 				sort year
 				by year: egen implied_rent2	= sum(LY_implied_rent)
@@ -754,20 +777,43 @@ if prep == 1 {
 				di "Scaling `ind' to `impl'."
 				gen implied_rent3 			= index_hat / `ind' * `impl'
 				replace r_house 			= implied_rent3 * 12 / house_price if r_house == . & implied_rent3 ~=.
-				drop implied_rent* index_* rent_index 
+				rename implied_rent3 net_rent
+				drop implied_rent* index_* rent_index
 				
 				** Order and keep
-				order	year month t cpi-r_house
-				keep	year month t cpi-r_house
+				order	year month r_house net_rent
+				keep 	year month r_house net_rent
 				
+				** Save for join
+				cd_nb_stage
+				save r_house_join, replace
+				
+				** Load and join
+				cd_nb_stage
+				use all_join_temp, clear
+				drop r_house 
+				
+				** Join
+				cd_nb_stage
+				joinby year month using r_house_join, unmatched(master)
+					tab _merge
+					drop _merge
+					
+				** Update h_include
+				replace h_include 			= 0 if r_house ==.
+				
+				** Order
+				order year month t w_* r_* house_* *_rent
+				order h_incl *_orig, last
+				
+				** Rename
+				rename rent_index gross_rent
+									
 			} //end if
 			di "Done with monthly variation."
 			
 			** Percentage units
 			replace r_house					= r_house * 100
-			
-			** Set period
-			replace t						= t - 23
 			
 			** Save
 			cd_nb_stage
