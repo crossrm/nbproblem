@@ -32,7 +32,7 @@ if prep == 1 {
 	***********************************************************
 	** Install packages (if needed set inst scalar to 1)
 	***********************************************************
-	scalar inst = 0 
+	scalar inst = 0
 	if inst == 1 {
 		
 		** Stats command
@@ -87,14 +87,33 @@ if prep == 1 {
 			grstyle set color Set1
 			grstyle init
 	*		grstyle set plain, nogrid noextend
-			grstyle yesno draw_major_hgrid no //yes
-			grstyle yesno draw_major_ygrid no //yes
+			grstyle yesno draw_major_hgrid yes //no
+			grstyle yesno draw_major_ygrid yes //no
 			grstyle color major_grid gs8
 			grstyle linepattern major_grid dot
-			grstyle set legend 4, box inside
+			//grstyle set legend 4, box inside
 			grstyle color ci_area gs12%50
-			grstyle set nogrid		
-			
+			//grstyle set nogrid		
+			* Style 2
+			//grstyle set legend 2
+			grstyle set graphsize 10cm 13cm
+			grstyle set size 12pt: heading
+			grstyle set size 10pt: subheading axis_title
+			grstyle set size 8pt: tick_label key_label
+			grstyle set symbolsize 1 2 3 4 5, pt
+			grstyle set linewidth 0: pmark
+			//grstyle set linewidth 1pt: axisline tick major_grid legend xyline
+			grstyle set linewidth 2.5pt: plineplot
+			grstyle set margin .5cm: twoway               // margin of plot region
+			grstyle set margin ".5 1 .75 .25", cm: graph  // margin of graph region
+			* Style 3
+			grstyle init
+			grstyle set plain
+			grstyle set color Set1, opacity(50)
+			grstyle set symbolsize large
+			grstyle set symbol T T
+			grstyle anglestyle p2symbol 180
+						
 		} //End if
 		di "Done with graph settings."
 		
@@ -382,8 +401,15 @@ if prep == 1 {
 			drop if e==.
 			destring *, replace
 
-			** Rename
-			gen r_stock					= e / p * 0.5
+			** Gen r_stock
+			local payout_rate_early		= 0.625
+			local payout_rate_mid		= 0.825
+			local payout_rate_late		= 1.000
+			gen r_stock					= e / p
+			replace r_stock				= r_stock * `payout_rate_early' if year <= 1983
+			replace r_stock				= r_stock * `payout_rate_mid' 	if year > 1983 & year <= 1993  //cite Plowback Capex (finario.com)
+			replace r_stock				= r_stock * `payout_rate_late' 	if year > 1993
+			
 			rename rategs10 r_bond
 			replace r_stock 			= r_stock * 100
 			
@@ -392,9 +418,19 @@ if prep == 1 {
 			rename e earnings
 			rename p snp500
 			
+			** r_price
+			sort year month 
+			gen n1						= _n
+			sort n1
+			tsset n1
+			gen cpi_lag1				= L12.cpi 
+			gen r_price					= (cpi - cpi_lag1) / cpi_lag1 //* 12
+			replace r_price				= r_price * 100
+				sum r_price
+				
 			** Keep and save
-			order 	year month dividend earnings snp500 cpi r_stock r_bond
-			keep 	year month dividend earnings snp500 cpi r_stock r_bond
+			order 	year month dividend earnings snp500 cpi r_stock r_bond r_price
+			keep 	year month dividend earnings snp500 cpi r_stock r_bond r_price
 			cd_nb_stage
 			save shiller_data, replace
 			
@@ -688,7 +724,7 @@ if prep == 1 {
 			gen rent_cpi_orig			= (rent_index ~=. )
 				
 			** Order
-			order year month t *_orig cpi gdp pop w_stock w_bond w_house r_stock r_bond r_house house_price house_units 
+			order year month t *_orig cpi r_price gdp pop w_stock w_bond w_house r_stock r_bond r_house house_price house_units 
 			gen h_include 				= (house_price ~=.) 
 			
 			** Update t
@@ -713,6 +749,7 @@ if prep == 1 {
 				keep if house_price ~=.
 							
 				** Look at implied net rent 
+				order month year, last
 				gen implied_rent			= house_price * r_house / 12
 				
 				** Interpolate monthly implied inflation
@@ -751,7 +788,6 @@ if prep == 1 {
 				sort year
 				by year: egen implied_rent2	= sum(LY_implied_rent)
 				drop LY_implied_rent
-					order month year, last
 				replace implied_rent2		= implied_rent2 + gain * cumul_corr // last year rent, plus the monthly portion of the annual gain
 				drop gain cumul_corr
 				
@@ -761,7 +797,7 @@ if prep == 1 {
 				sort year
 				by year: egen dropit		= sum(missing)
 				drop if index_hat==. & r_house == .
-				drop if r_house==.   & dropit > 0
+				drop if dropit > 0   & r_house == .
 				drop dropit missing
 				
 				** Fill monthly r_house
@@ -769,12 +805,12 @@ if prep == 1 {
 				replace r_house 			= implied_rate if r_house==. & implied_rate ~= .
 				drop implied_rent2 implied_rate
 				
-				** Fill later-years r_house
+				** Fill later-years r_house > 2015
 				sum implied_rent if year == 2015 & month ==12
 				local impl = r(mean)
 				sum index_hat  if year == 2015 & month ==12
 				local ind = r(mean)
-				di "Scaling `ind' to `impl'."
+					di "Scaling `ind' to `impl'."
 				gen implied_rent3 			= index_hat / `ind' * `impl'
 				replace r_house 			= implied_rent3 * 12 / house_price if r_house == . & implied_rent3 ~=.
 				rename implied_rent3 net_rent
@@ -835,26 +871,153 @@ di "Done with load and prep."
 scalar runit = 1
 if runit == 1 {
 
+
 	***********************************************************
-	** Visualize
+	** ARIMA
 	***********************************************************
-	scalar look = 1 
-	if look == 1 {
+	scalar arim = 1 
+	if arim == 1 {
 		
 		** Load main 
 		cd_nb_stage
 		use analysis_data, clear
 			
 			** Summary stats
-			sum
+			gen div_shr			= dividend / earnings
+			sum year div_* dividend earnings w_stock if year <= 1983 
+			sum year div_* dividend earnings w_stock if year > 1983 
 			
-			** Graphs
-			twoway connected r_stock year if year>= 1890 & year<=1950, ms(none) || connected r_bond year if year>= 1890 & year<=1950, ms(none) || connected r_house year if year>= 1890 & year<=1950, ms(none) legend(order(1 "stock" 2 "bond" 3 "house"))  
-			twoway connected r_stock year if year>= 1950 & year<=2000, ms(none) || connected r_bond year if year>= 1950 & year<=2000, ms(none) || connected r_house year if year>= 1950 & year<=2000, ms(none) legend(order(1 "stock" 2 "bond" 3 "house"))  
-			twoway connected r_stock year if year>= 2000 & year<=2024, ms(none) || connected r_bond year if year>= 2000 & year<=2024, ms(none) || connected r_house year if year>= 2000 & year<=2024, ms(none) legend(order(1 "stock" 2 "bond" 3 "house"))  
 			
+			** Set view periods
+			keep if year >= 1890
+			gen period 			= 1
+			replace period		= 2 if year >= 1930
+			replace period		= 3 if year >= 1970
+			replace period		= 4 if year >= 2000
+			//replace period		= 5 if year >= 2001
+			//replace period		= 6 if year >= 2019
+			
+			** Gen dates
+			gen dt 					=	mdy(month,1,year)
+			
+			replace dt				= dt + 25566
+			replace dt 				= dt / 365.25 + 1890
+			summarize
+
+			** Graphs settings
+			* Style 3
+			grstyle init
+			grstyle set plain
+			grstyle set color Set1, opacity(50)
+			grstyle set symbolsize tiny
+			grstyle set symbol T T
+			grstyle anglestyle p2symbol 180 
+			grstyle set grid
+			** Additionals
+			
+			** Real bond rate
+			gen rr_bond					= r_bond - r_price
+			
+			** ARIMA
+			tsset t
+			** Stock
+			** Look
+			sum year month t r_stock 										if year >= 1947
+			nb_getarima r_stock 2 5 1947					// nb_getarima depvar AR MA first_year
+			arima r_stock if year >= 1947, arima(1,1,1)		// AR, Difference, MA
+			arima D.r_stock if year >= 1947, ar(1) ma(1)
+			** Correlogram
+			ac  D.r_stock if year >= 1947, ylabels(-.4(.2).6) name(ac_stock, replace)
+			//graph save ac_stock, replace
+			pac D.r_stock if year >= 1947, ylabels(-.4(.2).6) name(pac_stock, replace)
+			//graph save pac_stock, replace
+			graph combine ac_stock pac_stock, rows(2) cols(1)
+			** First specification -- 1,3,5,12 interchangeable
+			arima D.r_stock if year >= 1947, ar(1 3 12) ma(5)
+			arima D.r_stock if year >= 1947, ar(3 12) ma(1 5)
+			arima D.r_stock if year >= 1947, ar(3) ma(1 5 12)
+		
+			** Stock with controls
+		
+			** Bond
+			** Look
+			arima rr_bond if year >= 1947, arima(1,1,1)
+			** Correlogram
+			ac  D.rr_bond if year >= 1947, ylabels(-.4(.2).6) name(ac_bond, replace)
+			//graph save ac_bond, replace
+			pac D.rr_bond if year >= 1947, ylabels(-.4(.2).6) name(pac_bond, replace)
+			//graph save pac_bond, replace
+			graph combine ac_bond pac_bond, rows(2) cols(1)
+			** First specifications - 1,4,12 interchangeable
+			arima D.rr_bond if year >= 1947, ar(4) ma(1 12)
+			arima D.rr_bond if year >= 1947, ar(1 4) ma(12)
+			arima D.rr_bond if year >= 1947, ar(12) ma(1 4)
+		
+			** House
+			** Look
+			arima r_house if year >= 1947, arima(1,1,1)
+			** Correlogram
+			ac  D.r_house if year >= 1947, ylabels(-.4(.2).6) name(ac_house, replace)
+			//graph save ac_house, replace
+			pac D.r_house if year >= 1947, ylabels(-.4(.2).6) name(pac_house, replace)
+			//graph save pac_house, replace
+			graph combine ac_house pac_house, rows(2) cols(1)
+			** First specifications 
+			//arima D.r_house if year >= 1947, ar(1 2 6 12 18 24 30 35) ma(1 2 10 15)
+			arima D.r_house if year >= 1947, ar(1 2 12 35) ma(1 2 10)
+			
+			** House with controls
+			reg r_house rr_bond r_stock if year >= 1947
+			arima D.r_house if year >= 1947, ar(1) ma(1)
+			arima D.r_house rr_bond r_stock if year >= 1947, ar(1) ma(1)
+			
+		
+			
+		
+		
+			*********************
+			** GRAPH
+			*********************
+			scalar graf = 1
+			if graf == 1 {
+				
+				** Annual
+				** Save and combine
+				cd_nb_stage
+				foreach n of numlist 1/4 {
+					
+						di "Saving period `n'. Names list is now: `names'."
+						
+					twoway connected r_stock rr_bond r_house year if period == `n' & month==12, name(period_`n', replace) legend(off) yscale(range(0)) ylabel(-6(2)10) cmissing(n)
+					graph save period_`n', replace 
+					//graph export period_`n'.png, replace
+					local names = "`names'" + "period_`n'.gph "
+					
+				} //end loop
+				di "Done with scatter loop."
+				graph combine `names', rows(2) cols(2) 
+							
+				** Monthly
+				** Save and combine
+				cd_nb_stage
+				foreach n of numlist 1/4 {
+					
+						di "Saving period `n'. Names list is now: `names'."
+						
+					twoway connected r_stock rr_bond r_house dt if period == `n', name(period_`n', replace) legend(off) yscale(range(0)) ylabel(-6(2)10) cmissing(n) xlabel()
+					graph save period_`n', replace 
+					//graph export period_`n'.png, replace
+					local names2 = "`names2'" + "period_`n'.gph "
+					
+				} //end loop
+				di "Done with scatter loop."
+				graph combine `names2', rows(2) cols(2) 
+		
+			} //end if
+			di "Done with graphs."
+						
 	} //End if
-	di "Done with look."
+	di "Done with ARIMA and Graph."
 
 } //end if
 di "Done with analysis."
