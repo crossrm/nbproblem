@@ -428,9 +428,13 @@ if prep == 1 {
 			replace r_price				= r_price * 100
 				sum r_price
 				
+			** Rogoff r_price - Long-Run Trends, Rogoff et al., AER 2024 - t-7 to t-1, 33, 23, 16, 11, 8, 3
+			gen r_priceR				= L1.r_price * 0.33 + L1.r_price * 0.23 + L1.r_price * 0.16 + L1.r_price * 0.11 + L1.r_price * 0.08 + L1.r_price * 0.03  
+				reg r_price r_priceR
+				
 			** Keep and save
-			order 	year month dividend earnings snp500 cpi r_stock r_bond r_price
-			keep 	year month dividend earnings snp500 cpi r_stock r_bond r_price
+			order 	year month dividend earnings snp500 cpi r_stock r_bond r_price*
+			keep 	year month dividend earnings snp500 cpi r_stock r_bond r_price*
 			cd_nb_stage
 			save shiller_data, replace
 			
@@ -872,152 +876,498 @@ scalar runit = 1
 if runit == 1 {
 
 
-	***********************************************************
+	*********************
 	** ARIMA
-	***********************************************************
+	*********************
 	scalar arim = 1 
 	if arim == 1 {
 		
 		** Load main 
+		clear all
 		cd_nb_stage
 		use analysis_data, clear
 			
-			** Summary stats
-			gen div_shr			= dividend / earnings
-			sum year div_* dividend earnings w_stock if year <= 1983 
-			sum year div_* dividend earnings w_stock if year > 1983 
-			
-			
-			** Set view periods
-			keep if year >= 1890
-			gen period 			= 1
-			replace period		= 2 if year >= 1930
-			replace period		= 3 if year >= 1970
-			replace period		= 4 if year >= 2000
-			//replace period		= 5 if year >= 2001
-			//replace period		= 6 if year >= 2019
-			
-			** Gen dates
-			gen dt 					=	mdy(month,1,year)
-			
-			replace dt				= dt + 25566
-			replace dt 				= dt / 365.25 + 1890
-			summarize
+		** Summary stats
+		gen div_shr			= dividend / earnings
+		sum year div_* dividend earnings w_stock if year <= 1983 
+		sum year div_* dividend earnings w_stock if year > 1983 
+		
+		
+		** Set view periods
+		keep if year >= 1890
+		gen period 			= 1
+		replace period		= 2 if year >= 1930
+		replace period		= 3 if year >= 1970
+		replace period		= 4 if year >= 2000
+		//replace period		= 5 if year >= 2001
+		//replace period		= 6 if year >= 2019
+		
+		** Gen dates
+		gen dt 					=	mdy(month,1,year)
+		
+		replace dt				= dt + 25566
+		replace dt 				= dt / 365.25 + 1890
+		summarize
 
-			** Graphs settings
-			* Style 3
-			grstyle init
-			grstyle set plain
-			grstyle set color Set1, opacity(50)
-			grstyle set symbolsize tiny
-			grstyle set symbol T T
-			grstyle anglestyle p2symbol 180 
-			grstyle set grid
-			** Additionals
-			
-			** Real bond rate
-			gen rr_bond					= r_bond - r_price
-			
-			** ARIMA
-			tsset t
-			** Stock
-			** Look
-			sum year month t r_stock 										if year >= 1947
-			nb_getarima r_stock 2 5 1947					// nb_getarima depvar AR MA first_year
-			arima r_stock if year >= 1947, arima(1,1,1)		// AR, Difference, MA
-			arima D.r_stock if year >= 1947, ar(1) ma(1)
-			** Correlogram
-			ac  D.r_stock if year >= 1947, ylabels(-.4(.2).6) name(ac_stock, replace)
-			//graph save ac_stock, replace
-			pac D.r_stock if year >= 1947, ylabels(-.4(.2).6) name(pac_stock, replace)
-			//graph save pac_stock, replace
-			graph combine ac_stock pac_stock, rows(2) cols(1)
-			** First specification -- 1,3,5,12 interchangeable
-			arima D.r_stock if year >= 1947, ar(1 3 12) ma(5)
-			arima D.r_stock if year >= 1947, ar(3 12) ma(1 5)
-			arima D.r_stock if year >= 1947, ar(3) ma(1 5 12)
+		** Graphs settings
+		* Style 3
+		grstyle init
+		grstyle set plain
+		grstyle set color Set1, opacity(50)
+		grstyle set symbolsize tiny
+		grstyle set symbol T T
+		grstyle anglestyle p2symbol 180 
+		grstyle set grid
+		** Additionals
 		
-			** Stock with controls
+		** Save monthly 
+		cd_nb_stage
+		save monthly_data, replace
 		
-			** Bond
-			** Look
-			arima rr_bond if year >= 1947, arima(1,1,1)
-			** Correlogram
-			ac  D.rr_bond if year >= 1947, ylabels(-.4(.2).6) name(ac_bond, replace)
-			//graph save ac_bond, replace
-			pac D.rr_bond if year >= 1947, ylabels(-.4(.2).6) name(pac_bond, replace)
-			//graph save pac_bond, replace
-			graph combine ac_bond pac_bond, rows(2) cols(1)
-			** First specifications - 1,4,12 interchangeable
-			arima D.rr_bond if year >= 1947, ar(4) ma(1 12)
-			arima D.rr_bond if year >= 1947, ar(1 4) ma(12)
-			arima D.rr_bond if year >= 1947, ar(12) ma(1 4)
-		
-			** House
-			** Look
-			arima r_house if year >= 1947, arima(1,1,1)
-			** Correlogram
-			ac  D.r_house if year >= 1947, ylabels(-.4(.2).6) name(ac_house, replace)
-			//graph save ac_house, replace
-			pac D.r_house if year >= 1947, ylabels(-.4(.2).6) name(pac_house, replace)
-			//graph save pac_house, replace
-			graph combine ac_house pac_house, rows(2) cols(1)
-			** First specifications 
-			//arima D.r_house if year >= 1947, ar(1 2 6 12 18 24 30 35) ma(1 2 10 15)
-			arima D.r_house if year >= 1947, ar(1 2 12 35) ma(1 2 10)
-			
-			** House with controls
-			reg r_house rr_bond r_stock if year >= 1947
-			arima D.r_house if year >= 1947, ar(1) ma(1)
-			arima D.r_house rr_bond r_stock if year >= 1947, ar(1) ma(1)
-			
-		
-			
-		
-		
-			*********************
-			** GRAPH
-			*********************
-			scalar graf = 1
-			if graf == 1 {
+		**********************************************
+		** Annual 
+		**********************************************
+		scalar ann = 1
+		if ann == 1 {
 				
-				** Annual
-				** Save and combine
-				cd_nb_stage
-				foreach n of numlist 1/4 {
-					
-						di "Saving period `n'. Names list is now: `names'."
-						
-					twoway connected r_stock rr_bond r_house year if period == `n' & month==12, name(period_`n', replace) legend(off) yscale(range(0)) ylabel(-6(2)10) cmissing(n)
-					graph save period_`n', replace 
-					//graph export period_`n'.png, replace
-					local names = "`names'" + "period_`n'.gph "
-					
-				} //end loop
-				di "Done with scatter loop."
-				graph combine `names', rows(2) cols(2) 
-							
-				** Monthly
-				** Save and combine
-				cd_nb_stage
-				foreach n of numlist 1/4 {
-					
-						di "Saving period `n'. Names list is now: `names'."
-						
-					twoway connected r_stock rr_bond r_house dt if period == `n', name(period_`n', replace) legend(off) yscale(range(0)) ylabel(-6(2)10) cmissing(n) xlabel()
-					graph save period_`n', replace 
-					//graph export period_`n'.png, replace
-					local names2 = "`names2'" + "period_`n'.gph "
-					
-				} //end loop
-				di "Done with scatter loop."
-				graph combine `names2', rows(2) cols(2) 
+			** Reload
+			cd_nb_stage
+			use monthly_data, clear
+			
+			** Bond
+			** Rogoff
+			** Real bond rate - Rogoff
+			gen rr_bond					= r_bond - r_priceR
+			
+			** Drop months
+			keep if month==12
+			
+			** TSSET
+			sort year
+			gen n 						= _n
+			tsset n
 		
-			} //end if
-			di "Done with graphs."
+			******************************
+			** N-Body based
+			******************************
+			scalar nb 					= 1
+			if nb == 1 {
+					
+				////////////
+				** Bonds
+				////////////
+				scalar bon 				= 1
+				if bon == 1 {
+					
+					** Distances
+					gen up_stock				= r_stock - rr_bond
+					gen last_up_stock			= L1.up_stock
+					gen up_house				= r_house - rr_bond
+					gen last_up_house			= L1.up_house
+					replace up_stock			= last_up_stock
+					replace up_house			= last_up_house
+					drop last_*
+					gen mas_stock				= w_stock / w_bond
+					gen last_stock 				= L1.mas_stock
+					replace mas_stock			= last_stock
+					gen mas_house				= w_house / w_bond
+					gen last_house				= L1.mas_house
+					replace mas_house 			= last_house
+					drop last_*
+
+					** Nominal interest rate
+					reg r_bond up_* r_stock r_price D.r_stock D.r_price
+					predict e_bond, xb
+					replace e_bond 				= r_bond - e_bond		//Convert to error
+					** Correlogram
+					ac  e_bond, ylabels(-.4(.2).6) name(ac_bond, replace)
+					//graph save ac_bond, replace
+					pac e_bond, ylabels(-.4(.2).6) name(pac_bond, replace)
+					//graph save pac_bond, replace
+					graph combine ac_bond pac_bond, rows(2) cols(1)
+					** ARIMA
+					arima r_bond up_* r_stock r_price D.r_stock D.r_house D.r_price , ar(7) ma(3 4)
+					estat aroots
+					
+					** Real innterest rate
+					** Correlogram
+					ac  D.rr_bond, ylabels(-.4(.2).6) name(ac_bond, replace)
+					//graph save ac_bond, replace
+					pac D.rr_bond, ylabels(-.4(.2).6) name(pac_bond, replace)
+					//graph save pac_bond, replace
+					graph combine ac_bond pac_bond, rows(2) cols(1)
+					** REG
+					reg D.rr_bond c.up_stock##c.up_stock##c.mas_stock c.up_stock#c.up_house c.up_house##c.up_house##c.mas_house D.r_stock D.r_house 
+					reg D.rr_bond c.up_stock##c.up_stock c.up_stock#c.up_house c.up_house##c.up_house mas_* D.r_stock D.r_house 
+					reg D.rr_bond up_stock up_house mas_* D.r_stock D.r_house 
+					** ARIMA
+					arima D.rr_bond up_stock up_house mas_* D.r_stock D.r_house , ar(1) ma(1 4 15) //rogoff inflation (smoothed) - slightly more stationary
+					*arima D.rr_bond up_stock up_house mas_* D.r_stock D.r_house , ar(1 2) ma(1 2 3) //non-rogoff inflation (1-year change in price)
+					estat aroots
+				
+					** Margins
+					scalar mar = 1
+					if mar == 1 {
 						
+						** visual
+						reg D.rr_bond c.up_stock##c.up_stock c.up_stock#c.up_house c.up_house##c.up_house mas_* D.r_stock D.r_house 
+							sum up* mas_*
+						margins, at (up_stock=(0(1)20))
+						marginsplot, recast(line) recastci(rarea)
+						margins, at (up_house=(0(1)20))
+						marginsplot, recast(line) recastci(rarea)
+						margins, at (mas_stock=(0(0.1)5))
+						marginsplot, recast(line) recastci(rarea)
+						margins, at (mas_house=(2(1)20))
+						marginsplot, recast(line) recastci(rarea)
+
+					} //end if
+					di "Done with margins."
+					
+				} //end if
+				di "Done with bonds NB."
+					
+				////////////
+				** Stock
+				////////////
+				scalar stoc 				= 1
+				if stoc == 1 {
+						
+					** Distances
+					drop up_* mas_*
+					gen up_bond					= rr_bond - r_stock
+					gen last_up_bond			= L1.up_bond
+					gen up_house				= r_house - r_stock
+					gen last_up_house			= L1.up_house
+					replace up_bond				= last_up_bond
+					replace up_house			= last_up_house
+					drop last_*
+					gen mas_bond				= w_bond / w_stock
+					gen last_bond 				= L1.mas_bond
+					replace mas_bond			= last_bond
+					gen mas_house				= w_house / w_stock
+					gen last_house				= L1.mas_house
+					replace mas_house 			= last_house
+					drop last_*
+					
+					** Stock level
+					reg r_stock up_* mas_* r_bond r_house r_price D.r_bond D.r_house D.r_price
+					predict e_stock, xb
+					replace e_stock 				= r_stock - e_stock		//Convert to error
+					** Correlogram
+					ac  e_stock, ylabels(-.4(.2).6) name(ac_stock, replace)
+					//graph save ac_bond, replace
+					pac e_stock, ylabels(-.4(.2).6) name(pac_stock, replace)
+					//graph save pac_bond, replace
+					graph combine ac_stock pac_stock, rows(2) cols(1)
+					** ARIMA
+					arima r_stock up_bond up_house mas_* r_bond r_house r_price D.r_bond D.r_house D.r_price, ar(1) ma() //rogoff inflation (smoothed) - slightly more stationary
+					estat aroots
+				
+					** Stock change
+					drop e_stock
+					reg D.r_stock up_* mas_* r_bond r_house r_price D.r_bond D.r_house D.r_price
+					predict e_stock, xb
+					replace e_stock 				= r_stock - e_stock		//Convert to error
+					** Correlogram
+					ac  e_stock, ylabels(-.4(.2).6) name(ac_stock, replace)
+					//graph save ac_bond, replace
+					pac e_stock, ylabels(-.4(.2).6) name(pac_stock, replace)
+					//graph save pac_bond, replace
+					graph combine ac_stock pac_stock, rows(2) cols(1)
+					** REG
+					reg r_stock c.up_bond##c.up_bond##c.mas_bond c.up_bond#c.up_house c.up_house##c.up_house##c.mas_house r_bond r_house r_price D.r_bond D.r_house D.r_price 
+					** ARIMA
+					arima D.r_stock up_bond up_house mas_* r_bond r_house r_price D.r_bond D.r_house D.r_price, ar(1) ma() 
+					*arima D.rr_bond up_stock up_house mas_* D.r_stock D.r_house , ar(1 2) ma(1 2 3) //non-rogoff inflation (1-year change in price)
+					estat aroots
+					
+				} //end if
+				di "Done with stock NB."
+				
+				////////////
+				** House
+				////////////
+				scalar hous 				= 1
+				if hous == 1 {
+						
+					** Distances
+					drop up_* mas_*
+					gen up_bond					= r_bond - r_house
+					gen last_up_bond			= L1.up_bond
+					gen up_stock				= r_stock - r_house
+					gen last_up_stock			= L1.up_stock
+					replace up_bond				= last_up_bond
+					replace up_stock			= last_up_stock
+					drop last_*
+					gen mas_bond				= w_bond / w_house
+					gen last_bond 				= L1.mas_bond
+					replace mas_bond			= last_bond
+					gen mas_stock				= w_stock / w_house
+					gen last_stock				= L1.mas_stock
+					replace mas_stock 			= last_stock
+					drop last_*
+					
+					** Stock level
+					reg r_house up_* mas_* r_bond r_stock r_price D.r_bond D.r_stock D.r_price
+					predict e_house, xb
+					replace e_house 				= r_house - e_house		//Convert to error
+					** Correlogram
+					ac  e_house, ylabels(-.4(.2).6) name(ac_house, replace)
+					//graph save ac_bond, replace
+					pac e_house, ylabels(-.4(.2).6) name(pac_house, replace)
+					//graph save pac_bond, replace
+					graph combine ac_house pac_house, rows(2) cols(1)
+					** ARIMA
+					arima r_house t up_bond up_stock mas_* r_bond r_stock r_price D.r_bond D.r_stock D.r_price, ar(1 2) ma(1 2 6) //rogoff inflation (smoothed) - slightly more stationary
+					estat aroots
+				
+					** Stock change
+					drop e_house
+					reg D.r_house up_* mas_* r_bond r_stock r_price D.r_bond D.r_stock D.r_price
+					predict e_house, xb
+					replace e_house 				= r_house - e_house		//Convert to error
+					** Correlogram
+					ac  e_house, ylabels(-.4(.2).6) name(ac_house, replace)
+					//graph save ac_bond, replace
+					pac e_house, ylabels(-.4(.2).6) name(pac_house, replace)
+					//graph save pac_bond, replace
+					graph combine ac_house pac_house, rows(2) cols(1)
+					** ARIMA
+					arima D.r_house up_bond up_stock mas_* r_bond r_stock r_price D.r_bond D.r_stock D.r_price, ar(1) ma(1) 
+					estat aroots
+					
+				} //end if
+				di "Done with house NB."
+				
+			} //end if
+			di "Done with NB-annual."
+								
+			******************************
+			** Rogoff 2024 - annual
+			******************************
+			scalar rog 					= 1
+			if rog == 1 {
+				
+				** Correlogram - linear detrended data (Rogoff trend)
+				** Gen linear detrended bond rate for correlogram - rr_bondt
+				gen trend 					= n
+				reg rr_bond trend
+				predict rr_bondt, xb
+				replace rr_bondt 			= rr_bond - rr_bondt
+				** Check
+					reg rr_bondt rr_bond		
+				** Correlogram
+				ac  rr_bondt, ylabels(-.4(.2).6) name(ac_bond, replace)
+				//graph save ac_bond, replace
+				pac rr_bondt, ylabels(-.4(.2).6) name(pac_bond, replace)
+				//graph save pac_bond, replace
+				graph combine ac_bond pac_bond, rows(2) cols(1)
+				drop rr_bondt
+				
+				** Rogoff 2024 stationarity Table 1
+				dfgls rr_bond, maxlag(3) ers
+				
+				** Rogoff 2024 half life Table 4 -- Matlab
+				
+				** Rogoff 2024 - Figure 1 - Long-run component
+				
+				** Annual ARIMA
+				** Rogoff - max 3
+				arima rr_bond t, ar(1 2 3) ma(1 2 3) 
+				estat aroots
+				
+				** Corelogram-based
+				arima rr_bond t r_stock r_house, ar(1 2 15) ma(1 16)
+				estat aroots
+			
+			} //end if
+			di "Done with rogoff bonds annual."
+		
+			******************************
+			** Jorda 2018 - annual
+			******************************
+			scalar jor 					= 1
+			if jor == 1 {
+				
+				asdf_jorda
+				
+				** Correlogram - linear detrended data 
+				** Gen linear detrended bond rate for correlogram - rr_bondt
+				gen trend 					= n
+				reg rr_bond trend
+				predict rr_bondt, xb
+				replace rr_bondt 			= rr_bond - rr_bondt
+				** Check
+					reg rr_bondt rr_bond		
+				** Correlogram
+				ac  rr_bondt, ylabels(-.4(.2).6) name(ac_bond, replace)
+				//graph save ac_bond, replace
+				pac rr_bondt, ylabels(-.4(.2).6) name(pac_bond, replace)
+				//graph save pac_bond, replace
+				graph combine ac_bond pac_bond, rows(2) cols(1)
+				drop rr_bondt
+				
+				** Rogoff 2024 stationarity Table 1
+				dfgls rr_bond, maxlag(3) ers
+				** Rogoff 2024 half life Table 4 -- Matlab
+				** Rogoff 2024 - Figure 1 - Long-run component
+				** Annual ARIMA
+				** Rogoff - max 3
+				arima rr_bond t, ar(1 2 3) ma(1 2 3) 
+				estat aroots
+				
+				** Corelogram-based
+				arima rr_bond r_stock r_house, ar(1 2 15) ma(1 16)
+				estat aroots
+			
+			} //end if
+			di "Done with rogoff bonds annual."
+		
+			
+		
+		} //end if
+		di "Done with annual."
+
+		
+		asdf_monthly
+		
+		
+		
+		** Stock
+		** Correlogram
+		ac  rr_bond if year >= 1947, ylabels(-.4(.2).6) name(ac_bond, replace)
+		//graph save ac_bond, replace
+		pac rr_bond if year >= 1947, ylabels(-.4(.2).6) name(pac_bond, replace)
+		
+		
+		
+		
+		
+		asdf
+		
+		** Bond
+		** Monthly
+		** Look
+		arima rr_bond if year >= 1947, arima(1,1,1)
+		estat aroots
+		** Correlogram
+		ac  rr_bond if year >= 1947, ylabels(-.4(.2).6) name(ac_bond, replace)
+		//graph save ac_bond, replace
+		pac rr_bond if year >= 1947, ylabels(-.4(.2).6) name(pac_bond, replace)
+		//graph save pac_bond, replace
+		graph combine ac_bond pac_bond, rows(2) cols(1)
+		** Rogoff
+		arima rr_bond t if month == 12, ar(4) ma(1 12)
+		estat aroots
+		
+		** First specifications - 1,4,12 interchangeable
+		arima D.rr_bond if year >= 1947, ar(4) ma(1 12)
+		arima D.rr_bond if year >= 1947, ar(1 4) ma(12)
+		arima D.rr_bond if year >= 1947, ar(12) ma(1 4)
+		** Bond with controls
+		arima D.rr_bond r_house r_stock if year >= 1947, ar(4) ma(1 12)
+		estat aroots
+		** Undifferenced
+		arima rr_bond r_house r_stock if year >= 1947, ar(4) ma(1 12)
+		estat aroots
+		
+		asdf
+		** Stock
+		** Monthly
+		** Look
+		sum year month t r_stock 										if year >= 1947
+		nb_getarima r_stock 2 2 1947					// nb_getarima depvar AR MA first_year
+		arima D.r_stock if year >= 1947, ar(1) ma(1)
+		arima D.r_stock if year >= 1947, ar(1) ma(1)
+		** Check stationarity 
+		estat aroots 
+		** Correlogram
+		ac  D.r_stock if year >= 1947, ylabels(-.4(.2).6) name(ac_stock, replace)
+		//graph save ac_stock, replace
+		pac D.r_stock if year >= 1947, ylabels(-.4(.2).6) name(pac_stock, replace)
+		//graph save pac_stock, replace
+		graph combine ac_stock pac_stock, rows(2) cols(1)
+		** First specification -- 1,3,5,12 interchangeable
+		arima D.r_stock if year >= 1947, ar(1 3 12) ma(5)
+		arima D.r_stock if year >= 1947, ar(3 12) ma(1 5)
+		arima D.r_stock if year >= 1947, ar(3) ma(1 5 12)
+		estat aroots 
+		** Stock with controls
+		arima D.r_stock rr_bond r_house if year >= 1947, ar(3) ma(1 5 12)
+		estat aroots
+		** Undifferenced
+		arima r_stock rr_bond r_house if year >= 1947, ar(3) ma(1 5 12)
+		estat aroots
+		
+		
+		** House
+		** Look
+		arima r_house if year >= 1947, arima(1,1,1)
+		estat aroots
+		** Correlogram
+		ac  D.r_house if year >= 1947, ylabels(-.4(.2).6) name(ac_house, replace)
+		//graph save ac_house, replace
+		pac D.r_house if year >= 1947, ylabels(-.4(.2).6) name(pac_house, replace)
+		//graph save pac_house, replace
+		graph combine ac_house pac_house, rows(2) cols(1)
+		** First specifications 
+		//arima D.r_house if year >= 1947, ar(1 2 6 12 18 24 30 35) ma(1 2 10 15)
+		arima D.r_house if year >= 1947, ar(1 2 12 35) ma(1 2 10)
+		estat aroots
+		** House with controls
+		reg r_house rr_bond r_stock if year >= 1947
+		arima D.r_house if year >= 1947, ar(1) ma(1)
+		arima D.r_house rr_bond r_stock if year >= 1947, ar(1) ma(1)
+		arima D.r_house rr_bond r_stock if year >= 1947, ar(1 2 12 35) ma(1 2 10)
+		** Undifferenced 
+		arima r_house rr_bond r_stock if year >= 1947, ar(1 2 12 35) ma(1 2 10)
+		estat aroots
+			
 	} //End if
-	di "Done with ARIMA and Graph."
+	di "Done with ARIMA."
+	
+	*********************
+	** GRAPH
+	*********************
+	scalar graf = 1
+	if graf == 1 {
+		
+		** Annual
+		** Save and combine
+		cd_nb_stage
+		foreach n of numlist 1/4 {
+			
+				di "Saving period `n'. Names list is now: `names'."
+				
+			twoway connected r_stock rr_bond r_house year if period == `n' & month==12, name(period_`n', replace) legend(off) yscale(range(0)) ylabel(-6(2)10) cmissing(n)
+			graph save period_`n', replace 
+			//graph export period_`n'.png, replace
+			local names = "`names'" + "period_`n'.gph "
+			
+		} //end loop
+		di "Done with scatter loop."
+		graph combine `names', rows(2) cols(2) 
+					
+		** Monthly
+		** Save and combine
+		cd_nb_stage
+		foreach n of numlist 1/4 {
+			
+				di "Saving period `n'. Names list is now: `names'."
+				
+			twoway connected r_stock rr_bond r_house dt if period == `n', name(period_`n', replace) legend(off) yscale(range(0)) ylabel(-6(2)10) cmissing(n) xlabel()
+			graph save period_`n', replace 
+			//graph export period_`n'.png, replace
+			local names2 = "`names2'" + "period_`n'.gph "
+			
+		} //end loop
+		di "Done with scatter loop."
+		graph combine `names2', rows(2) cols(2) 
+
+	} //end if
+	di "Done with graphs."
+				
 
 } //end if
 di "Done with analysis."
