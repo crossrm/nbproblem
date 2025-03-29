@@ -626,14 +626,15 @@ if prep == 1 {
 			replace house_price					= rev_fill_price + monthly_fill if house_price == .
 			replace house_price					= . if house_price==0
 			gen w_house							= house_price * house_units / 1000000000 //billions of dollars
+			gen w_price							= 1 //numeraire 
 			
 			** Add master time variable t
 			sort year month
 			gen t								= _n
 			
 			** Save
-			order 	year month t *_orig house_price house_units w_house
-			keep	year month t *_orig house_price house_units w_house
+			order 	year month t *_orig house_price house_units w_house w_price
+			keep	year month t *_orig house_price house_units w_house w_price
 			cd_nb_stage
 			save housing_data, replace
 									
@@ -728,7 +729,7 @@ if prep == 1 {
 			gen rent_cpi_orig			= (rent_index ~=. )
 				
 			** Order
-			order year month t *_orig cpi r_price gdp pop w_stock w_bond w_house r_stock r_bond r_house house_price house_units 
+			order year month t *_orig cpi r_price gdp pop w_stock w_bond w_house w_price r_stock r_bond r_house house_price house_units 
 			gen h_include 				= (house_price ~=.) 
 			
 			** Update t
@@ -952,31 +953,68 @@ if runit == 1 {
 			******************************
 			scalar nb 					= 1
 			if nb == 1 {
+			
+				** Relative distances
+				global nam "stock bond house price"
+				** Stats loop
+				** Primary
+				foreach pri of global nam {
+
+						di "Primary velocity and accel: `pri'."
+						
+					** Velocity
+					gen v_`pri'				= r_`pri' - L.r_`pri' 
+					gen last_v_`pri'		= L1.v_`pri'
+					replace v_`pri'			= last_v_`pri'
 					
+					** Acceleration
+					gen a_`pri'				= v_`pri' - L.v_`pri' 
+					gen last_a_`pri'		= L1.a_`pri'
+					replace a_`pri'			= last_a_`pri'
+					
+					** Lag weights to be in filtration
+					gen last_w_`pri'		= L1.w_`pri'
+					replace w_`pri'			= last_w_`pri'
+					drop last_*
+					
+					** Secondary
+					foreach sec of global nam  {
+						
+							di "Starting primary: `pri' and secondary: `sec'."
+						
+						** Distance
+						gen d_`pri'_`sec'				= r_`pri' - r_`sec'
+						gen last_d_`pri'_`sec'			= L1.d_`pri'_`sec'
+						replace d_`pri'_`sec'			= last_d_`pri'_`sec'
+						replace d_`pri'_`sec'			= last_d_`pri'_`sec'
+						drop last_*
+						
+						** Directional distance
+						gen dd_`pri'_`sec'				= d_`pri'_`sec'*(d_`pri'_`sec'>0)
+						
+						** Convert distance to positive
+						replace d_`pri'_`sec'			= abs(d_`pri'_`sec')
+						
+						** Relative mas
+						gen m_`pri'_`sec'				= w_`pri' / w_`sec'
+												
+					} //end loop
+					di "Done with seconary loop for primary: `pri'."
+					
+					** Delete diagonal elements
+					drop *_`pri'_`pri'
+					
+				} //end loop
+				di "Done with relative distance loop."
+			
 				////////////
 				** Bonds
 				////////////
 				scalar bon 				= 1
 				if bon == 1 {
 					
-					** Distances
-					gen up_stock				= r_stock - rr_bond
-					gen last_up_stock			= L1.up_stock
-					gen up_house				= r_house - rr_bond
-					gen last_up_house			= L1.up_house
-					replace up_stock			= last_up_stock
-					replace up_house			= last_up_house
-					drop last_*
-					gen mas_stock				= w_stock / w_bond
-					gen last_stock 				= L1.mas_stock
-					replace mas_stock			= last_stock
-					gen mas_house				= w_house / w_bond
-					gen last_house				= L1.mas_house
-					replace mas_house 			= last_house
-					drop last_*
-
 					** Nominal interest rate
-					reg r_bond up_* r_stock r_price D.r_stock D.r_price
+					reg r_bond r_stock r_price d_bond_stock dd_bond_stock v_* a_* m_bond_stock m_bond_house
 					predict e_bond, xb
 					replace e_bond 				= r_bond - e_bond		//Convert to error
 					** Correlogram
@@ -985,24 +1023,39 @@ if runit == 1 {
 					pac e_bond, ylabels(-.4(.2).6) name(pac_bond, replace)
 					//graph save pac_bond, replace
 					graph combine ac_bond pac_bond, rows(2) cols(1)
+					drop e_*
 					** ARIMA
-					arima r_bond up_* r_stock r_price D.r_stock D.r_house D.r_price , ar(7) ma(3 4)
+					arima r_bond r_stock r_price d_bond_stock dd_bond_stock v_* a_* m_bond_stock m_bond_house, ar(1) ma(16)
 					estat aroots
 					
-					** Real innterest rate
+					** Velocity interest rate
+					reg v_bond r_stock r_house r_price d_bond_* dd_bond_* v_stock v_house v_price a_* m_bond_*
+					predict e_bond, xb
+					replace e_bond 				= r_bond - e_bond		//Convert to error
 					** Correlogram
-					ac  D.rr_bond, ylabels(-.4(.2).6) name(ac_bond, replace)
+					ac  e_bond, ylabels(-.4(.2).6) name(ac_bond, replace)
 					//graph save ac_bond, replace
-					pac D.rr_bond, ylabels(-.4(.2).6) name(pac_bond, replace)
+					pac e_bond, ylabels(-.4(.2).6) name(pac_bond, replace)
 					//graph save pac_bond, replace
 					graph combine ac_bond pac_bond, rows(2) cols(1)
-					** REG
-					reg D.rr_bond c.up_stock##c.up_stock##c.mas_stock c.up_stock#c.up_house c.up_house##c.up_house##c.mas_house D.r_stock D.r_house 
-					reg D.rr_bond c.up_stock##c.up_stock c.up_stock#c.up_house c.up_house##c.up_house mas_* D.r_stock D.r_house 
-					reg D.rr_bond up_stock up_house mas_* D.r_stock D.r_house 
+					drop e_*
 					** ARIMA
-					arima D.rr_bond up_stock up_house mas_* D.r_stock D.r_house , ar(1) ma(1 4 15) //rogoff inflation (smoothed) - slightly more stationary
-					*arima D.rr_bond up_stock up_house mas_* D.r_stock D.r_house , ar(1 2) ma(1 2 3) //non-rogoff inflation (1-year change in price)
+					arima v_bond r_stock r_house r_price d_bond_* dd_bond_* v_stock v_house v_price a_* m_bond_*, ar(1) ma()
+					estat aroots
+				
+					** Acceleration interest rate
+					reg a_bond r_stock r_house r_price d_bond_* dd_bond_* v_stock v_house v_price a_stock a_house a_price m_bond_*
+					predict e_bond, xb
+					replace e_bond 				= r_bond - e_bond		//Convert to error
+					** Correlogram
+					ac  e_bond, ylabels(-.4(.2).6) name(ac_bond, replace)
+					//graph save ac_bond, replace
+					pac e_bond, ylabels(-.4(.2).6) name(pac_bond, replace)
+					//graph save pac_bond, replace
+					graph combine ac_bond pac_bond, rows(2) cols(1)
+					drop e_*
+					** ARIMA
+					arima a_bond r_stock r_house r_price d_bond_* dd_bond_* v_stock v_house v_price a_stock a_house a_price m_bond_*, ar(1) ma(3)
 					estat aroots
 				
 					** Margins
@@ -1010,15 +1063,16 @@ if runit == 1 {
 					if mar == 1 {
 						
 						** visual
-						reg D.rr_bond c.up_stock##c.up_stock c.up_stock#c.up_house c.up_house##c.up_house mas_* D.r_stock D.r_house 
-							sum up* mas_*
-						margins, at (up_stock=(0(1)20))
+						reg a_bond dd_bond* c.d_bond_stock##c.d_bond_stock c.d_bond_stock#c.d_bond_house c.d_bond_house##c.d_bond_house ///
+							c.v_stock##c.v_bond a_stock a_price a_house w_bond
+							sum d_* v_* 
+						margins, at (d_bond_stock=(0(0.1)7))
 						marginsplot, recast(line) recastci(rarea)
-						margins, at (up_house=(0(1)20))
+						margins, at (d_bond_house=(0(0.1)8))
 						marginsplot, recast(line) recastci(rarea)
-						margins, at (mas_stock=(0(0.1)5))
+						margins, at (v_stock=(-4(0.1)4))
 						marginsplot, recast(line) recastci(rarea)
-						margins, at (mas_house=(2(1)20))
+						margins, at (v_bond=(-2(0.1)2))
 						marginsplot, recast(line) recastci(rarea)
 
 					} //end if
@@ -1032,26 +1086,11 @@ if runit == 1 {
 				////////////
 				scalar stoc 				= 1
 				if stoc == 1 {
-						
-					** Distances
-					drop up_* mas_*
-					gen up_bond					= rr_bond - r_stock
-					gen last_up_bond			= L1.up_bond
-					gen up_house				= r_house - r_stock
-					gen last_up_house			= L1.up_house
-					replace up_bond				= last_up_bond
-					replace up_house			= last_up_house
-					drop last_*
-					gen mas_bond				= w_bond / w_stock
-					gen last_bond 				= L1.mas_bond
-					replace mas_bond			= last_bond
-					gen mas_house				= w_house / w_stock
-					gen last_house				= L1.mas_house
-					replace mas_house 			= last_house
-					drop last_*
 					
+					** Here
+
 					** Stock level
-					reg r_stock up_* mas_* r_bond r_house r_price D.r_bond D.r_house D.r_price
+					reg r_stock d_* m_* r_bond r_house r_price D.r_bond D.r_house D.r_price
 					predict e_stock, xb
 					replace e_stock 				= r_stock - e_stock		//Convert to error
 					** Correlogram
@@ -1060,13 +1099,13 @@ if runit == 1 {
 					pac e_stock, ylabels(-.4(.2).6) name(pac_stock, replace)
 					//graph save pac_bond, replace
 					graph combine ac_stock pac_stock, rows(2) cols(1)
+					drop e_*
 					** ARIMA
-					arima r_stock up_bond up_house mas_* r_bond r_house r_price D.r_bond D.r_house D.r_price, ar(1) ma() //rogoff inflation (smoothed) - slightly more stationary
+					arima r_stock d_bond d_house m_* r_bond r_house r_price D.r_bond D.r_house D.r_price, ar(1) ma() //rogoff inflation (smoothed) - slightly more stationary
 					estat aroots
 				
 					** Stock change
-					drop e_stock
-					reg D.r_stock up_* mas_* r_bond r_house r_price D.r_bond D.r_house D.r_price
+					reg D.r_stock d_* m_* r_bond r_house r_price D.r_bond D.r_house D.r_price
 					predict e_stock, xb
 					replace e_stock 				= r_stock - e_stock		//Convert to error
 					** Correlogram
@@ -1075,11 +1114,12 @@ if runit == 1 {
 					pac e_stock, ylabels(-.4(.2).6) name(pac_stock, replace)
 					//graph save pac_bond, replace
 					graph combine ac_stock pac_stock, rows(2) cols(1)
+					drop e_*
 					** REG
-					reg r_stock c.up_bond##c.up_bond##c.mas_bond c.up_bond#c.up_house c.up_house##c.up_house##c.mas_house r_bond r_house r_price D.r_bond D.r_house D.r_price 
+					reg r_stock c.d_bond##c.d_bond##c.m_bond c.d_bond#c.d_house c.d_house##c.d_house##c.m_house r_bond r_house r_price D.r_bond D.r_house D.r_price 
 					** ARIMA
-					arima D.r_stock up_bond up_house mas_* r_bond r_house r_price D.r_bond D.r_house D.r_price, ar(1) ma() 
-					*arima D.rr_bond up_stock up_house mas_* D.r_stock D.r_house , ar(1 2) ma(1 2 3) //non-rogoff inflation (1-year change in price)
+					arima D.r_stock d_bond d_house m_* r_bond r_house r_price D.r_bond D.r_house D.r_price, ar(1) ma() 
+					*arima D.rr_bond d_stock d_house m_* D.r_stock D.r_house , ar(1 2) ma(1 2 3) //non-rogoff inflation (1-year change in price)
 					estat aroots
 					
 				} //end if
@@ -1092,13 +1132,13 @@ if runit == 1 {
 				if hous == 1 {
 						
 					** Distances
-					drop up_* mas_*
-					gen up_bond					= r_bond - r_house
-					gen last_up_bond			= L1.up_bond
-					gen up_stock				= r_stock - r_house
-					gen last_up_stock			= L1.up_stock
-					replace up_bond				= last_up_bond
-					replace up_stock			= last_up_stock
+					drop d_* mas_*
+					gen d_bond					= r_bond - r_house
+					gen last_d_bond			= L1.d_bond
+					gen d_stock				= r_stock - r_house
+					gen last_d_stock			= L1.d_stock
+					replace d_bond				= last_d_bond
+					replace d_stock			= last_d_stock
 					drop last_*
 					gen mas_bond				= w_bond / w_house
 					gen last_bond 				= L1.mas_bond
@@ -1109,7 +1149,7 @@ if runit == 1 {
 					drop last_*
 					
 					** Stock level
-					reg r_house up_* mas_* r_bond r_stock r_price D.r_bond D.r_stock D.r_price
+					reg r_house d_* mas_* r_bond r_stock r_price D.r_bond D.r_stock D.r_price
 					predict e_house, xb
 					replace e_house 				= r_house - e_house		//Convert to error
 					** Correlogram
@@ -1118,13 +1158,13 @@ if runit == 1 {
 					pac e_house, ylabels(-.4(.2).6) name(pac_house, replace)
 					//graph save pac_bond, replace
 					graph combine ac_house pac_house, rows(2) cols(1)
+					drop e_*
 					** ARIMA
-					arima r_house t up_bond up_stock mas_* r_bond r_stock r_price D.r_bond D.r_stock D.r_price, ar(1 2) ma(1 2 6) //rogoff inflation (smoothed) - slightly more stationary
+					arima r_house t d_bond d_stock mas_* r_bond r_stock r_price D.r_bond D.r_stock D.r_price, ar(1 2) ma(1 2 6) //rogoff inflation (smoothed) - slightly more stationary
 					estat aroots
 				
 					** Stock change
-					drop e_house
-					reg D.r_house up_* mas_* r_bond r_stock r_price D.r_bond D.r_stock D.r_price
+					reg D.r_house d_* mas_* r_bond r_stock r_price D.r_bond D.r_stock D.r_price
 					predict e_house, xb
 					replace e_house 				= r_house - e_house		//Convert to error
 					** Correlogram
@@ -1133,8 +1173,9 @@ if runit == 1 {
 					pac e_house, ylabels(-.4(.2).6) name(pac_house, replace)
 					//graph save pac_bond, replace
 					graph combine ac_house pac_house, rows(2) cols(1)
+					drop e_*
 					** ARIMA
-					arima D.r_house up_bond up_stock mas_* r_bond r_stock r_price D.r_bond D.r_stock D.r_price, ar(1) ma(1) 
+					arima D.r_house d_bond d_stock mas_* r_bond r_stock r_price D.r_bond D.r_stock D.r_price, ar(1) ma(1) 
 					estat aroots
 					
 				} //end if
@@ -1146,7 +1187,7 @@ if runit == 1 {
 			******************************
 			** Rogoff 2024 - annual
 			******************************
-			scalar rog 					= 1
+			scalar rog 					= 0
 			if rog == 1 {
 				
 				** Correlogram - linear detrended data (Rogoff trend)
@@ -1167,6 +1208,10 @@ if runit == 1 {
 				
 				** Rogoff 2024 stationarity Table 1
 				dfgls rr_bond, maxlag(3) ers
+				dfgls r_bond, maxlag(3) ers
+				dfgls r_price, maxlag(3) ers
+				dfgls r_stock, maxlag(3) ers
+				dfgls r_house, maxlag(3) ers
 				
 				** Rogoff 2024 half life Table 4 -- Matlab
 				
@@ -1185,12 +1230,40 @@ if runit == 1 {
 			di "Done with rogoff bonds annual."
 		
 			******************************
-			** Jorda 2018 - annual
+			** Knoll 2017 - annual
 			******************************
 			scalar jor 					= 1
 			if jor == 1 {
 				
-				asdf_jorda
+				** Reg
+				** rent: price ratio (Knoll 2017 analyzes price:rent)
+				reg r_house L.r_house					//Knoll Eqn 3.7 (inverse)
+				reg r_house L.r_house, robust
+								
+				** VAR
+				var r_house, lags(1/10) dfk small // Knoll 2017 Table 3.4, Panel B, Column 3
+				
+				** Exented
+				var r_house r_stock r_bond r_price, lags(1 2 3 6 10) dfk small // Knoll 2017 Table 3.4, Panel B, Column 3
+				** Granger test
+				vargranger				
+				** Plot
+				irf create var1, step(20) set(myirf) replace
+				irf graph oirf, impulse(r_house r_stock r_bond r_price) response(r_house r_stock r_bond r_price) yline(0,lcolor(black)) xlabel(0(3)18) byopts(yrescale)
+				
+				** Velocity
+				var D.r_house D.r_stock D.r_bond D.r_price, lags(1 2 3 6 10) dfk small // Knoll 2017 Table 3.4, Panel B, Column 3
+				** Granger test
+				vargranger	
+				** Plot
+				irf create var1, step(20) set(myirf) replace
+				irf graph oirf, impulse(D_r_house D_r_stock D_r_bond D_r_price) response(D_r_house D_r_stock D_r_bond D_r_price) yline(0,lcolor(black)) xlabel(0(3)18) byopts(yrescale)
+				
+				
+				
+				
+				asdf_knoll
+				
 				
 				** Correlogram - linear detrended data 
 				** Gen linear detrended bond rate for correlogram - rr_bondt
