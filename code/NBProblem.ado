@@ -43,6 +43,7 @@ program 			define 	NBProblem
 			** Margins plot option 1 -- color
 			ssc install g538schemes, replace all
 			ssc install hettreatreg, all
+			*ssc install xtmixediou
 			
 			** Margins plot option 2 -- article
 			scalar article_format = 1
@@ -873,14 +874,13 @@ program 			define 	NBProblem
 
 
 	***********************************************************
-	** Analysis
+	** Analysis & Figures
 	***********************************************************
 	scalar runit = 1
 	if runit == 1 {
 
-
 		*********************
-		** ARIMA
+		** ANALYSIS
 		*********************
 		scalar arim = 1 
 		if arim == 1 {
@@ -941,7 +941,7 @@ program 			define 	NBProblem
 			save annual_data, replace
 			
 			**********************************************
-			** Annual - endog
+			** Annual - endogenous
 			**********************************************
 			scalar ann = 1
 			if ann == 1 {
@@ -956,7 +956,7 @@ program 			define 	NBProblem
 				tsset n
 							
 				******************************
-				** N-Body based
+				** N-Body moments
 				******************************
 				scalar nb 					= 1
 				if nb == 1 {
@@ -971,18 +971,12 @@ program 			define 	NBProblem
 							
 						** Velocity
 						gen v_`pri'				= r_`pri' - L.r_`pri' 
-						//gen last_v_`pri'		= L1.v_`pri'
-						//replace v_`pri'			= last_v_`pri'
-						
+												
 						** Acceleration
 						gen a_`pri'				= v_`pri' - L.v_`pri' 
-						//gen last_a_`pri'		= L1.a_`pri'
-						//replace a_`pri'			= last_a_`pri'
 						
-						** Lag weights to be in filtration
-						//gen last_w_`pri'		= L1.w_`pri'
-						//replace w_`pri'			= last_w_`pri'
-						//drop last_*
+						** Jolt (Jerk)
+						gen j_`pri'				= a_`pri' - L.a_`pri' 
 						
 						** Secondary
 						foreach sec of global nam  {
@@ -991,15 +985,9 @@ program 			define 	NBProblem
 							
 							** Distance
 							gen d_`pri'_`sec'				= r_`pri' - r_`sec'
-							//gen last_d_`pri'_`sec'			= L1.d_`pri'_`sec'
-							//replace d_`pri'_`sec'			= last_d_`pri'_`sec'
-							//drop last_*
-							
-							** Directional distance
+														
+							** Positive distance
 							gen dd_`pri'_`sec'				= d_`pri'_`sec'*(d_`pri'_`sec'>0)
-							
-							** Convert distance to positive
-							replace d_`pri'_`sec'			= abs(d_`pri'_`sec')
 							
 							** Relative mas
 							gen m_`pri'_`sec'				= w_`pri' / w_`sec'
@@ -1021,9 +1009,9 @@ program 			define 	NBProblem
 						
 						** Drop
 						drop r_priceR
-						
+												
 						** Nominal interest rate
-						reg r_bond r_stock r_house r_price D.d_bond_stock D.dd_bond_stock D.v_* D.a_* D.m_bond_stock
+						reg r_bond r_stock r_house r_price L.d_bond* L.dd_bond* L.v_* L.a_* L.j_* L.m_bond*
 						predict e_bond, xb
 						replace e_bond 				= r_bond - e_bond		//Convert to error
 						** Correlogram
@@ -1034,11 +1022,11 @@ program 			define 	NBProblem
 						graph combine ac_bond pac_bond, rows(2) cols(1)
 						drop e_*
 						** ARIMA
-						arima r_bond r_stock r_house r_price D.d_bond_stock D.dd_bond_stock D.v_* D.a_* D.m_bond_stock, ar(1 2 3) ma()
+						arima r_bond r_stock r_house r_price L.d_bond* L.dd_bond* L.v_* L.a_* L.j_* L.m_bond*, ar(1) ma(1)
 						estat aroots
 						
 						** Velocity interest rate
-						reg v_bond v_stock v_house v_price D.dd_bond_* D.a_* D.m_bond_*
+						reg v_bond v_stock v_house v_price L.d_bond* L.dd_bond* L.r_price L.a_* L.j_* L.m_bond*
 						predict e_bond, xb
 						replace e_bond 				= r_bond - e_bond		//Convert to error
 						** Correlogram
@@ -1049,11 +1037,11 @@ program 			define 	NBProblem
 						graph combine ac_bond pac_bond, rows(2) cols(1)
 						drop e_*
 						** ARIMA
-						arima v_bond v_stock v_house v_price D.dd_bond_* D.a_* D.m_bond_*, ar(2) ma()
+						arima v_bond v_stock v_house v_price L.d_bond* L.dd_bond* L.r_price L.a_* L.j_* L.m_bond*, ar(1 2) ma()
 						estat aroots
 					
 						** Acceleration interest rate
-						reg a_bond D.r_* D.d_bond_* a_stock a_house a_price D.m_bond_*
+						reg a_bond a_stock a_house a_price L.d_bond* L.dd_bond* L.r_price L.v_* L.j_* L.m_bond*
 						predict e_bond, xb
 						replace e_bond 				= r_bond - e_bond		//Convert to error
 						** Correlogram
@@ -1064,7 +1052,22 @@ program 			define 	NBProblem
 						graph combine ac_bond pac_bond, rows(2) cols(1)
 						drop e_*
 						** ARIMA
-						arima a_bond D.r_* D.d_bond_* a_stock a_house a_price D.m_bond_*, ar(1) ma(1)
+						arima a_bond a_stock a_house a_price L.d_bond* L.dd_bond* L.r_price L.j_* L.m_bond*, ar(1 2 3 4) ma()
+						estat aroots
+						
+						** Acceleration interest rate
+						reg j_bond j_stock j_house j_price L.d_bond* L.dd_bond* L.r_price L.v_* L.a_* L.m_bond*
+						predict e_bond, xb
+						replace e_bond 				= r_bond - e_bond		//Convert to error
+						** Correlogram
+						ac  e_bond, ylabels(-.4(.2).6) name(ac_bond, replace)
+						//graph save ac_bond, replace
+						pac e_bond, ylabels(-.4(.2).6) name(pac_bond, replace)
+						//graph save pac_bond, replace
+						graph combine ac_bond pac_bond, rows(2) cols(1)
+						drop e_*
+						** ARIMA
+						arima j_bond j_stock j_house j_price L.d_bond* L.dd_bond* L.r_price L.v_* L.a_* L.m_bond*, ar(1 2) ma(1)
 						estat aroots
 					
 					} //end if
@@ -1073,11 +1076,11 @@ program 			define 	NBProblem
 					////////////
 					** Stock
 					////////////
-					scalar stoc 			= 1111
+					scalar stoc 			= 1
 					if stoc == 1 {
 												
 						** Stock level
-						reg r_stock r_bond r_house r_price D.d_stock* D.dd_stock* D.v_* D.a_* D.m_stock*
+						reg r_stock r_bond r_house r_price L.d_stock* L.dd_stock* L.v_* L.a_* L.j_* L.m_stock*
 						predict e_stock, xb
 						replace e_stock 				= r_stock - e_stock		//Convert to error
 						** Correlogram
@@ -1088,11 +1091,11 @@ program 			define 	NBProblem
 						graph combine ac_stock pac_stock, rows(2) cols(1)
 						drop e_*
 						** ARIMA
-						arima r_stock r_bond r_house r_price D.d_stock* D.dd_stock* D.v_* D.a_* D.m_stock*, ar(1 2 3) ma() //no ma lags converge
+						arima r_stock r_bond r_house r_price L.d_stock* L.dd_stock* L.v_* L.a_* L.j_* L.m_stock*, ar(1 2) ma() //no ma lags converge
 						estat aroots
 					
 						** Stock velocity (change)
-						reg v_stock v_bond v_house v_price D.d_stock* D.a_* D.m_stock*
+						reg v_stock v_bond v_house v_price L.d_stock* L.dd_stock* L.r_price L.a_* L.j_* L.m_stock*
 						predict e_stock, xb
 						replace e_stock 				= r_stock - e_stock		//Convert to error
 						** Correlogram
@@ -1103,11 +1106,11 @@ program 			define 	NBProblem
 						graph combine ac_stock pac_stock, rows(2) cols(1)
 						drop e_*
 						** ARIMA
-						arima v_stock v_bond v_house v_price D.d_stock* D.a_* D.m_stock*, ar(2) ma() 
+						arima v_stock v_bond v_house v_price L.d_stock* L.dd_stock* L.r_price L.a_* L.j_* L.m_stock*, ar(1) ma(1) 
 						estat aroots
 						
 						** Stock acceleration
-						reg a_stock a_bond a_house a_price D.r_* D.dd_stock* D.m_stock*
+						reg a_stock a_bond a_house a_price L.d_stock* L.dd_stock* L.r_price L.v_* L.j_* L.m_stock*
 						predict e_stock, xb
 						replace e_stock 				= r_stock - e_stock		//Convert to error
 						** Correlogram
@@ -1118,9 +1121,24 @@ program 			define 	NBProblem
 						graph combine ac_stock pac_stock, rows(2) cols(1)
 						drop e_*
 						** ARIMA
-						arima a_stock a_bond a_house a_price D.r_* D.dd_stock* D.m_stock*, ar(1) ma() 
+						arima a_stock a_bond a_house a_price L.d_stock* L.dd_stock* L.r_price L.v_* L.j_* L.m_stock*, ar(1) ma(1) 
 						estat aroots
-						
+												
+						** Stock jolt
+						reg j_stock j_bond j_house j_price L.d_stock* L.dd_stock* L.r_price L.v_* L.a_* L.m_stock*
+						predict e_stock, xb
+						replace e_stock 				= r_stock - e_stock		//Convert to error
+						** Correlogram
+						ac  e_stock, ylabels(-.4(.2).6) name(ac_stock, replace)
+						//graph save ac_bond, replace
+						pac e_stock, ylabels(-.4(.2).6) name(pac_stock, replace)
+						//graph save pac_bond, replace
+						graph combine ac_stock pac_stock, rows(2) cols(1)
+						drop e_*
+						** ARIMA
+						arima j_stock j_bond j_house j_price L.d_stock* L.dd_stock* L.r_price L.v_* L.a_* L.m_stock*, ar(1) ma() 
+						estat aroots
+												
 					} //end if
 					di "Done with stock NB."
 					
@@ -1131,7 +1149,7 @@ program 			define 	NBProblem
 					if hous == 1 {
 											
 						** House level
-						reg r_house r_stock r_bond r_price D.dd_house* D.v_* D.a_* D.m_house*
+						reg r_house r_stock r_bond r_price L.d_house* L.dd_house* L.v_* L.a_* L.j_* L.m_house*
 						predict e_house, xb
 						replace e_house 				= r_house - e_house		//Convert to error
 						** Correlogram
@@ -1142,11 +1160,11 @@ program 			define 	NBProblem
 						graph combine ac_house pac_house, rows(2) cols(1)
 						drop e_*
 						** ARIMA
-						arima r_house r_stock r_bond r_price D.dd_house* D.v_* D.a_* D.m_house*, ar(1 2 3) ma(4) //no ma lags converge
+						arima  r_house r_stock r_bond r_price L.d_house* L.dd_house* L.v_* L.a_* L.j_* L.m_house*, ar(1 2) ma(7) 
 						estat aroots
 					
 						** house velocity (change)
-						reg v_house v_stock v_bond v_price D.d_house* D.a_* D.m_house*
+						reg v_house v_stock v_bond v_price L.d_house* L.dd_house* L.r_price L.a_* L.j_* L.m_house*
 						predict e_house, xb
 						replace e_house 				= r_house - e_house		//Convert to error
 						** Correlogram
@@ -1157,11 +1175,11 @@ program 			define 	NBProblem
 						graph combine ac_house pac_house, rows(2) cols(1)
 						drop e_*
 						** ARIMA
-						arima v_house v_stock v_bond v_price D.d_house* D.a_* D.m_house*, ar(1 2) ma(3) 
+						arima v_house v_stock v_bond v_price L.d_house* L.dd_house* L.r_price L.a_* L.j_* L.m_house*, ar(1) ma() 
 						estat aroots
 						
 						** House acceleration
-						reg a_house a_stock a_bond a_price D.r_* D.dd_house* D.m_house*
+						reg a_house a_stock a_bond a_price L.d_house* L.dd_house* L.r_price L.v_* L.j_* L.m_house*
 						predict e_house, xb
 						replace e_house 				= r_house - e_house		//Convert to error
 						** Correlogram
@@ -1172,8 +1190,24 @@ program 			define 	NBProblem
 						graph combine ac_house pac_house, rows(2) cols(1)
 						drop e_*
 						** ARIMA
-						arima a_house a_stock a_bond a_price D.r_* D.dd_house* D.m_house*, ar(1 2) ma(2) 
+						arima a_house a_stock a_bond a_price D.r_* D.dd_house* D.m_house*, ar(1 2) ma() 
 						estat aroots
+												
+						** House jolt
+						reg j_house j_stock j_bond j_price L.d_house* L.dd_house* L.r_price L.v_* L.a_* L.m_house*
+						predict e_house, xb
+						replace e_house 				= r_house - e_house		//Convert to error
+						** Correlogram
+						ac  e_house, ylabels(-.4(.2).6) name(ac_house, replace)
+						//graph save ac_bond, replace
+						pac e_house, ylabels(-.4(.2).6) name(pac_house, replace)
+						//graph save pac_bond, replace
+						graph combine ac_house pac_house, rows(2) cols(1)
+						drop e_*
+						** ARIMA
+						arima j_house j_stock j_bond j_price L.d_house* L.dd_house* L.r_price L.v_* L.a_* L.m_house*, ar(1 6) ma(5) 
+						estat aroots
+									
 					} //end if
 					di "Done with house NB."
 					
@@ -1294,9 +1328,27 @@ program 			define 	NBProblem
 												
 				} //end if
 				di "Done with garch."
+												
+			} //end if
+			di "Done with annual."
+								
+			**********************************************
+			** N-body problem
+			**********************************************
+			scalar nbody = 1
+			if nbody == 1 {
+				
+				
+				
+				
+				
+				
 				
 			} //end if
-			di "Done with annual endog."
+			di "Done with NB."
+								
+								
+								
 								
 		} //End if
 		di "Done with analysis."
