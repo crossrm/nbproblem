@@ -920,34 +920,39 @@ if runit == 1 {
 		grstyle anglestyle p2symbol 180 
 		grstyle set grid
 		** Additionals
+			
+		** Bond
+		** Rogoff
+		** Real bond rate - Rogoff
+		gen rr_bond					= r_bond - r_priceR
 		
 		** Save monthly 
 		cd_nb_stage
 		save monthly_data, replace
 		
+		** Save annual
+		** Drop months
+		keep if month==12
+			
+		** Save 
+		cd_nb_stage
+		save annual_data, replace
+		
 		**********************************************
-		** Annual 
+		** Annual - lagged
 		**********************************************
 		scalar ann = 1
 		if ann == 1 {
-				
+						
 			** Reload
 			cd_nb_stage
-			use monthly_data, clear
-			
-			** Bond
-			** Rogoff
-			** Real bond rate - Rogoff
-			gen rr_bond					= r_bond - r_priceR
-			
-			** Drop months
-			keep if month==12
+			use annual_data, clear
 			
 			** TSSET
 			sort year
 			gen n 						= _n
 			tsset n
-		
+						
 			******************************
 			** N-Body based
 			******************************
@@ -1088,6 +1093,7 @@ if runit == 1 {
 				if stoc == 1 {
 					
 					** Here
+					asdf_here
 
 					** Stock level
 					reg r_stock d_* m_* r_bond r_house r_price D.r_bond D.r_house D.r_price
