@@ -116,6 +116,17 @@ program 			define 	NBProblem
 				grstyle set symbolsize large
 				grstyle set symbol T T
 				grstyle anglestyle p2symbol 180
+				
+				** Graphs settings
+				* Style 3
+				grstyle init
+				grstyle set plain
+				grstyle set color Set1, opacity(50)
+				grstyle set symbolsize tiny
+				grstyle set symbol T T
+				grstyle anglestyle p2symbol 180 
+				grstyle set grid
+				** Additionals
 							
 			} //End if
 			di "Done with graph settings."
@@ -954,9 +965,325 @@ program 			define 	NBProblem
 				sort year
 				gen n 						= _n
 				tsset n
-							
+										
 				******************************
-				** N-Body moments
+				** N-Body - Special cases
+				******************************
+				scalar nb 					= 1
+				if nb == 1 {
+				
+					** Relative distances
+					global nam "stock bond house price"
+					** Stats loop
+					** Primary
+					foreach pri of global nam {
+
+							di "Primary velocity and accel: `pri'."
+							
+						** Velocity
+						gen v_`pri'				= r_`pri' - L.r_`pri' 
+												
+						** Acceleration
+						gen a_`pri'				= v_`pri' - L.v_`pri' 
+						
+						** Jolt (Jerk)
+						gen j_`pri'				= a_`pri' - L.a_`pri' 
+						
+						** Rocket params
+						
+						** Percent change in mass - ln (m1 / m0)
+						gen mdot_`pri'			= ln(F1.w_`pri' / w_`pri')
+						gen mdotinv_`pri'		= mdot_`pri' ^ (-1)
+						
+						** Lagged values for rocket
+						gen lag_v_`pri'			= L.v_`pri'
+						gen lag_mdot_`pri'		= L.mdotinv_`pri'
+						
+						** Ejected velocity u - rocket
+						gen u_`pri'				= mdot_`pri' * F1.a_`pri' + v_`pri'
+						
+						** Secondary
+						foreach sec of global nam  {
+							
+								di "Starting primary: `pri' and secondary: `sec'."
+							
+							** N-Body params
+							
+							** Distance
+							gen d_`sec'_`pri'				= r_`sec' - r_`pri' 
+														
+							** Normed distance
+							gen n_`sec'_`pri'				= abs(d_`sec'_`pri')^3
+							
+							** Inververse normed distance
+							gen in_`sec'_`pri'				= 1/n_`sec'_`pri'
+
+							** Rocket params
+
+							** Mass-distance
+							gen md_`pri'_`sec'				= w_`sec' * d_`sec'_`pri'
+										
+							** Linear term
+							gen c_`sec'_`pri'				= w_`sec' * d_`sec'_`pri' * in_`sec'_`pri'
+										
+						} //end loop
+						di "Done with seconary loop for primary: `pri'."
+						
+						** Delete diagonal elements
+						drop *_`pri'_`pri'
+						
+					} //end loop
+					di "Done with relative distance loop."
+					
+					** Rename mass variables
+					rename w_* m_*
+					
+					** Drop
+					drop r_priceR
+					drop m_price
+					drop *_price*
+										
+						** Order
+						order n t year month dt period r_* v_* a_* j_* m_* d_* n_* in_* c_* mdot_* mdotinv* u_* lag_*
+				
+					** Save
+					cd_nb_stage
+					save arima_data, replace
+				
+					////////////
+					** Ideal rocket motion
+					////////////
+					scalar rocket = 1
+					if rocket == 1 {
+						
+						** Load
+						cd_nb_stage
+						use arima_data, clear
+							
+						** Unconditional estimates of ejected mass velocity
+						** Market price of risk Lambda ~= 0.20: 0.2 percent higher per standard deviation volatility - holds for all three approximately
+						sum u_* r_* rr_* year if year >= 1890 
+						sum u_* r_* rr_* year if year >= 1945 
+							
+						** Conditional estimates of ejected velocity
+						** Here, the first coefficient b1 is the estimate of velocity of the ejected mass
+						reg a_stock lag_mdot_stock c.lag_v_stock#c.lag_mdot_stock, vce(robust)  
+						reg a_bond  lag_mdot_bond c.lag_v_bond#c.lag_mdot_bond  , vce(robust)
+						reg a_house lag_mdot_house c.lag_v_house#c.lag_mdot_house, vce(robust)
+						** Post war
+						reg a_stock lag_mdot_stock c.lag_v_stock#c.lag_mdot_stock if year>1945, vce(robust)  
+						reg a_bond  lag_mdot_bond c.lag_v_bond#c.lag_mdot_bond if year>1945  , vce(robust)
+						reg a_house lag_mdot_house c.lag_v_house#c.lag_mdot_house if year>1945, vce(robust)
+						** Post 1981
+						reg a_stock lag_mdot_stock c.lag_v_stock#c.lag_mdot_stock if year>1981, vce(robust)  
+						reg a_bond  lag_mdot_bond c.lag_v_bond#c.lag_mdot_bond if year>1981  , vce(robust)
+						reg a_house lag_mdot_house c.lag_v_house#c.lag_mdot_house if year>1981, vce(robust)
+						
+					} //end if
+					di "Done with perfect rocket."
+				
+				
+					////////////
+					** 3-body - motion
+					////////////
+					scalar rocket = 1
+					if rocket == 1 {
+						
+						** Load
+						cd_nb_stage
+						use arima_data, clear
+							
+						** Unconditional estimates of ejected mass velocity
+						** Market price of risk Lambda ~= 0.20: 0.2 percent higher per standard deviation volatility - holds for all three approximately
+						sum u_* r_* rr_* year if year >= 1890 
+						sum u_* r_* rr_* year if year >= 1945 
+							
+						** Conditional estimates of ejected velocity
+						** Here, the first coefficient b1 is the estimate of velocity of the ejected mass
+						reg a_stock lag_mdot_stock c.lag_v_stock#c.lag_mdot_stock, vce(robust)  
+						reg a_bond  lag_mdot_stock c.lag_v_bond#c.lag_mdot_bond  , vce(robust)
+						reg a_house lag_mdot_stock c.lag_v_house#c.lag_mdot_house, vce(robust)
+						** Post war
+						reg a_stock lag_mdot_stock c.lag_v_stock#c.lag_mdot_stock if year>1945, vce(robust)  
+						reg a_bond  lag_mdot_stock c.lag_v_bond#c.lag_mdot_bond if year>1945  , vce(robust)
+						reg a_house lag_mdot_stock c.lag_v_house#c.lag_mdot_house if year>1945, vce(robust)
+						** Post 1981
+						reg a_stock lag_mdot_stock c.lag_v_stock#c.lag_mdot_stock if year>1981, vce(robust)  
+						reg a_bond  lag_mdot_stock c.lag_v_bond#c.lag_mdot_bond if year>1981  , vce(robust)
+						reg a_house lag_mdot_stock c.lag_v_house#c.lag_mdot_house if year>1981, vce(robust)
+														
+						
+						asdf_3B
+						
+					} //end if
+					di "Done with 3-body."
+					
+					
+					////////////
+					** Rocket + Gravity
+					////////////
+					scalar rocket = 1
+					if rocket == 1 {
+						
+						** Load
+						cd_nb_stage
+						use arima_data, clear
+							
+						** 	
+							
+					} //end if
+					di "Done with Merged."
+				
+				
+					////////////
+					** Add risk premium
+					////////////
+					scalar rocket = 1
+					if rocket == 1 {
+						
+						** Load
+						cd_nb_stage
+						use arima_data, clear
+							
+						** Derive risk premia
+						reg r_stock r_bond r_house 	if year >=1945, vce(robust)
+						reg r_stock r_bond 			if year >=1945, vce(robust)
+						reg r_stock r_house 		if year >=1945, vce(robust)
+						reg r_house r_stock r_bond 	if year >=1945, vce(robust)
+						reg r_house r_bond 			if year >=1945, vce(robust)
+						reg r_house r_stock 		if year >=1945, vce(robust)
+						reg r_bond r_stock r_house 	if year >=1945, vce(robust)
+						reg r_bond r_house 			if year >=1945, vce(robust)
+						reg r_bond r_stock 			if year >=1945, vce(robust)
+							
+						asdf_risk	
+							
+					} //end if
+					di "Done with risk."
+				
+				
+					////////////
+					** Bonds
+					////////////
+					scalar bon 				= 1
+					if bon == 1 {
+						
+						** Load
+						cd_nb_stage
+						use arima_data, clear
+							
+						** Nominal interest rate
+						//rename r_bond bond 
+						reg r_bond L.r_bond m_* d_*_bond in_*_bond , vce(robust) 
+						//reg r_bond L.r_bond c_*_bond , vce(robust) 
+						predict e_bond, xb
+						replace e_bond 				= bond - e_bond		//Convert to error
+						** Correlogram
+						ac  e_bond, ylabels(-.4(.2).6) name(ac_bond, replace)
+						//graph save ac_bond, replace
+						pac e_bond, ylabels(-.4(.2).6) name(pac_bond, replace)
+						//graph save pac_bond, replace
+						graph combine ac_bond pac_bond, rows(2) cols(1)
+						drop e_*
+						** ARIMA
+						arima r_bond L.r_bond m_* d_*_bond in_*_bond  , ar(2 4) ma(1 3) vce(robust)
+						estat aroots
+						rename bond r_bond
+						
+						** Acceleration interest rate
+						rename a_bond bond 
+						rename m_bond	mass_bond
+						//reg bond L.r_price L.m_* L.d_*_bond L.n_*_bond L.in_*_bond L.md_*_bond L.c_*_bond L.v_* L.a_* L.j_* 
+						reg bond L.c_*_bond //2nd law
+						reg bond L.m_* L.d_*_bond L.in_*_bond  //2nd law bits
+						//reg bond m_* d_*_bond in_*_bond  //2nd law bits
+						predict e_bond, xb
+						replace e_bond 				= bond - e_bond		//Convert to error
+						** Correlogram
+						ac  e_bond, ylabels(-.4(.2).6) name(ac_bond, replace)
+						//graph save ac_bond, replace
+						pac e_bond, ylabels(-.4(.2).6) name(pac_bond, replace)
+						//graph save pac_bond, replace
+						graph combine ac_bond pac_bond, rows(2) cols(1)
+						drop e_*
+						** ARIMA
+						//arima bond L.m_* L.d_*_bond L.in_*_bond, ar(1 15) ma(12)  //real bon
+						arima bond L.m_* L.d_*_bond L.in_*_bond, ar(1) ma(4)
+						estat aroots
+						rename bond a_bond
+						rename mass_bond m_bond
+					
+					} //end if
+					di "Done with bonds NB."
+						
+						
+						
+						
+						
+					////////////
+					** Stock
+					////////////
+					scalar stoc 			= 1
+					if stoc == 1 {
+													
+						** Stock acceleration
+						rename a_stock stock 
+						//reg stock L.m_* L.d_*_stock L.n_*_stock L.in_*_stock L.md_*_stock L.c_*_stock L.r_* L.v_* L.a_* L.j_*
+						reg stock L.c_*_stock //2nd law
+						reg stock L.m_* L.d_*_stock L.in_*_stock  //2nd law bits
+						predict e_stock, xb
+						replace e_stock 				= stock - e_stock		//Convert to error
+						** Correlogram
+						ac  e_stock, ylabels(-.4(.2).6) name(ac_stock, replace)
+						//graph save ac_stock, replace
+						pac e_stock, ylabels(-.4(.2).6) name(pac_stock, replace)
+						//graph save pac_stock, replace
+						graph combine ac_stock pac_stock, rows(2) cols(1)
+						drop e_*
+						** ARIMA
+						//arima stock L.m_* L.d_*_stock L.in_*_stock, ar(1 3) ma(4) //2nd law bits
+						arima stock L.c_*_stock, ar(1) ma() 
+						estat aroots
+						rename stock a_stock
+																				
+					} //end if
+					di "Done with stock NB."
+					
+					////////////
+					** House
+					////////////
+					scalar hous 				= 1
+					if hous == 1 {
+											
+						** House acceleration
+						rename a_house house 
+						rename m_house mass_house
+						//reg house L.m_* L.d_*_house L.n_*_house L.in_*_house L.md_*_house L.c_*_house L.r_house L.v_* L.a_* L.j_*
+						//reg house L.c_*_house //2nd law
+						reg house L.m_* L.d_*_house L.in_*_house //2nd law bits
+						predict e_house, xb
+						replace e_house 				= house - e_house		//Convert to error
+						** Correlogram
+						ac  e_house, ylabels(-.4(.2).6) name(ac_house, replace)
+						//graph save ac_bond, replace
+						pac e_house, ylabels(-.4(.2).6) name(pac_house, replace)
+						//graph save pac_bond, replace
+						graph combine ac_house pac_house, rows(2) cols(1)
+						drop e_*
+						** ARIMA
+						arima house L.m_* L.d_*_house L.in_*_house, ar(1 2 6) ma() 
+						estat aroots
+						rename house a_house
+						rename mass_house m_house
+									
+					} //end if
+					di "Done with house NB."
+					
+				} //end if
+				di "Done with NB-annual."	
+					
+				******************************
+				** N-Body - ARIMA + Motion
 				******************************
 				scalar nb 					= 1
 				if nb == 1 {
@@ -984,14 +1311,20 @@ program 			define 	NBProblem
 								di "Starting primary: `pri' and secondary: `sec'."
 							
 							** Distance
-							gen d_`pri'_`sec'				= r_`pri' - r_`sec'
+							gen d_`sec'_`pri'				= r_`sec' - r_`pri' 
 														
-							** Positive distance
-							gen dd_`pri'_`sec'				= d_`pri'_`sec'*(d_`pri'_`sec'>0)
+							** Normed distance
+							gen n_`sec'_`pri'				= abs(d_`sec'_`pri')^3
 							
-							** Relative mas
-							gen m_`pri'_`sec'				= w_`pri' / w_`sec'
-													
+							** Inververse normed distance
+							gen in_`sec'_`pri'				= 1/n_`sec'_`pri'
+							
+							** Mass-distance
+							gen md_`pri'_`sec'				= w_`sec' * d_`sec'_`pri'
+										
+							** Linear term
+							gen c_`sec'_`pri'				= w_`sec' * d_`sec'_`pri' * in_`sec'_`pri'
+										
 						} //end loop
 						di "Done with seconary loop for primary: `pri'."
 						
@@ -1000,20 +1333,28 @@ program 			define 	NBProblem
 						
 					} //end loop
 					di "Done with relative distance loop."
-				
+					
+					** Rename mass variables
+					rename w_* m_*
+					
+					** Drop
+					drop r_priceR
+					drop m_price
+										
+						** Order
+						order n t year month dt period r_* v_* a_* j_* m_* d_* n_* in_* c_* 
+						
 					////////////
 					** Bonds
 					////////////
 					scalar bon 				= 1
 					if bon == 1 {
-						
-						** Drop
-						drop r_priceR
-												
+								
 						** Nominal interest rate
-						reg r_bond r_stock r_house r_price L.d_bond* L.dd_bond* L.v_* L.a_* L.j_* L.m_bond*
+						rename r_bond bond 
+						reg bond L.r_price L.m_* L.d_*_bond L.in_*_bond L.c_*_bond L.v_* L.a_* L.j_* 
 						predict e_bond, xb
-						replace e_bond 				= r_bond - e_bond		//Convert to error
+						replace e_bond 				= bond - e_bond		//Convert to error
 						** Correlogram
 						ac  e_bond, ylabels(-.4(.2).6) name(ac_bond, replace)
 						//graph save ac_bond, replace
@@ -1022,13 +1363,15 @@ program 			define 	NBProblem
 						graph combine ac_bond pac_bond, rows(2) cols(1)
 						drop e_*
 						** ARIMA
-						arima r_bond r_stock r_house r_price L.d_bond* L.dd_bond* L.v_* L.a_* L.j_* L.m_bond*, ar(1) ma(1)
-						estat aroots
+						//arima bond L.r_price L.m_* L.d_*_bond L.in_*_bond L.c_*_bond L.v_* L.a_* L.j_* , ar() ma()
+						//estat aroots
+						rename bond r_bond
 						
 						** Velocity interest rate
-						reg v_bond v_stock v_house v_price L.d_bond* L.dd_bond* L.r_price L.a_* L.j_* L.m_bond*
+						rename v_bond bond
+						reg bond L.r_price L.m_* L.d_*_bond L.in_*_bond L.c_*_bond L.v_* L.a_* L.j_* 
 						predict e_bond, xb
-						replace e_bond 				= r_bond - e_bond		//Convert to error
+						replace e_bond 				= bond - e_bond		//Convert to error
 						** Correlogram
 						ac  e_bond, ylabels(-.4(.2).6) name(ac_bond, replace)
 						//graph save ac_bond, replace
@@ -1037,28 +1380,17 @@ program 			define 	NBProblem
 						graph combine ac_bond pac_bond, rows(2) cols(1)
 						drop e_*
 						** ARIMA
-						arima v_bond v_stock v_house v_price L.d_bond* L.dd_bond* L.r_price L.a_* L.j_* L.m_bond*, ar(1 2) ma()
+						arima bond L.r_* L.m_* L.d_*_bond L.in_*_bond L.c_* L.v_* L.a_* L.j_*, ar(1) ma()
 						estat aroots
-					
-						** Acceleration interest rate
-						reg a_bond a_stock a_house a_price L.d_bond* L.dd_bond* L.r_price L.v_* L.j_* L.m_bond*
-						predict e_bond, xb
-						replace e_bond 				= r_bond - e_bond		//Convert to error
-						** Correlogram
-						ac  e_bond, ylabels(-.4(.2).6) name(ac_bond, replace)
-						//graph save ac_bond, replace
-						pac e_bond, ylabels(-.4(.2).6) name(pac_bond, replace)
-						//graph save pac_bond, replace
-						graph combine ac_bond pac_bond, rows(2) cols(1)
-						drop e_*
-						** ARIMA
-						arima a_bond a_stock a_house a_price L.d_bond* L.dd_bond* L.r_price L.j_* L.m_bond*, ar(1 2 3 4) ma()
-						estat aroots
+						rename bond v_bond
 						
 						** Acceleration interest rate
-						reg j_bond j_stock j_house j_price L.d_bond* L.dd_bond* L.r_price L.v_* L.a_* L.m_bond*
+						rename a_bond bond 
+						reg bond L.r_price L.m_* L.d_*_bond L.n_*_bond L.in_*_bond L.md_*_bond L.c_*_bond L.v_* L.a_* L.j_* 
+						*reg bond L.c_*_bond //2nd law
+						*reg bond L.m_* L.d_*_bond L.in_*_bond  //2nd law bits
 						predict e_bond, xb
-						replace e_bond 				= r_bond - e_bond		//Convert to error
+						replace e_bond 				= bond - e_bond		//Convert to error
 						** Correlogram
 						ac  e_bond, ylabels(-.4(.2).6) name(ac_bond, replace)
 						//graph save ac_bond, replace
@@ -1067,8 +1399,27 @@ program 			define 	NBProblem
 						graph combine ac_bond pac_bond, rows(2) cols(1)
 						drop e_*
 						** ARIMA
-						arima j_bond j_stock j_house j_price L.d_bond* L.dd_bond* L.r_price L.v_* L.a_* L.m_bond*, ar(1 2) ma(1)
+						//arima bond L.r_price L.m_* L.d_*_bond L.in_*_bond L.c_*_bond L.v_* L.a_* L.j_*, ar(1) ma()
+						//estat aroots
+						rename bond a_bond
+						
+						** Jolt interest rate
+						rename j_bond bond 
+						reg L.r_price L.m_* L.d_*_bond L.in_*_bond L.c_*_bond L.v_* L.a_* L.j_* 
+						predict e_bond, xb
+						replace e_bond 				= bond - e_bond		//Convert to error
+						** Correlogram
+						ac  e_bond, ylabels(-.4(.2).6) name(ac_bond, replace)
+						//graph save ac_bond, replace
+						pac e_bond, ylabels(-.4(.2).6) name(pac_bond, replace)
+						//graph save pac_bond, replace
+						graph combine ac_bond pac_bond, rows(2) cols(1)
+						drop e_*
+						** ARIMA
+						arima bond L.r_price L.m_* L.d_*_bond L.in_*_bond L.c_*_bond L.v_* L.a_* L.j_*, ar(1 2) ma(1)
 						estat aroots
+						rename bond j_bond
+						
 					
 					} //end if
 					di "Done with bonds NB."
@@ -1082,7 +1433,7 @@ program 			define 	NBProblem
 						** Stock level
 						reg r_stock r_bond r_house r_price L.d_stock* L.dd_stock* L.v_* L.a_* L.j_* L.m_stock*
 						predict e_stock, xb
-						replace e_stock 				= r_stock - e_stock		//Convert to error
+						replace e_stock 				= stock - e_stock		//Convert to error
 						** Correlogram
 						ac  e_stock, ylabels(-.4(.2).6) name(ac_stock, replace)
 						//graph save ac_bond, replace
@@ -1097,7 +1448,7 @@ program 			define 	NBProblem
 						** Stock velocity (change)
 						reg v_stock v_bond v_house v_price L.d_stock* L.dd_stock* L.r_price L.a_* L.j_* L.m_stock*
 						predict e_stock, xb
-						replace e_stock 				= r_stock - e_stock		//Convert to error
+						replace e_stock 				= stock - e_stock		//Convert to error
 						** Correlogram
 						ac  e_stock, ylabels(-.4(.2).6) name(ac_stock, replace)
 						//graph save ac_bond, replace
@@ -1110,24 +1461,28 @@ program 			define 	NBProblem
 						estat aroots
 						
 						** Stock acceleration
-						reg a_stock a_bond a_house a_price L.d_stock* L.dd_stock* L.r_price L.v_* L.j_* L.m_stock*
+						rename a_stock stock 
+						reg stock L.m_* L.d_*_stock L.n_*_stock L.in_*_stock L.md_*_stock L.c_*_stock L.r_* L.v_* L.a_* L.j_*
+						reg stock L.c_*_stock //2nd law
+						reg stock L.m_* L.d_*_bond L.in_*_bond  //2nd law bits
 						predict e_stock, xb
-						replace e_stock 				= r_stock - e_stock		//Convert to error
+						replace e_stock 				= stock - e_stock		//Convert to error
 						** Correlogram
 						ac  e_stock, ylabels(-.4(.2).6) name(ac_stock, replace)
-						//graph save ac_bond, replace
+						//graph save ac_stock, replace
 						pac e_stock, ylabels(-.4(.2).6) name(pac_stock, replace)
-						//graph save pac_bond, replace
+						//graph save pac_stock, replace
 						graph combine ac_stock pac_stock, rows(2) cols(1)
 						drop e_*
 						** ARIMA
-						arima a_stock a_bond a_house a_price L.d_stock* L.dd_stock* L.r_price L.v_* L.j_* L.m_stock*, ar(1) ma(1) 
+						arima stock L.m_* L.d_*_bond L.in_*_bond, ar(1) ma(1 3) 
 						estat aroots
+						rename stock a_stock
 												
 						** Stock jolt
 						reg j_stock j_bond j_house j_price L.d_stock* L.dd_stock* L.r_price L.v_* L.a_* L.m_stock*
 						predict e_stock, xb
-						replace e_stock 				= r_stock - e_stock		//Convert to error
+						replace e_stock 				= stock - e_stock		//Convert to error
 						** Correlogram
 						ac  e_stock, ylabels(-.4(.2).6) name(ac_stock, replace)
 						//graph save ac_bond, replace
@@ -1151,7 +1506,7 @@ program 			define 	NBProblem
 						** House level
 						reg r_house r_stock r_bond r_price L.d_house* L.dd_house* L.v_* L.a_* L.j_* L.m_house*
 						predict e_house, xb
-						replace e_house 				= r_house - e_house		//Convert to error
+						replace e_house 				= house - e_house		//Convert to error
 						** Correlogram
 						ac  e_house, ylabels(-.4(.2).6) name(ac_house, replace)
 						//graph save ac_bond, replace
@@ -1166,7 +1521,7 @@ program 			define 	NBProblem
 						** house velocity (change)
 						reg v_house v_stock v_bond v_price L.d_house* L.dd_house* L.r_price L.a_* L.j_* L.m_house*
 						predict e_house, xb
-						replace e_house 				= r_house - e_house		//Convert to error
+						replace e_house 				= house - e_house		//Convert to error
 						** Correlogram
 						ac  e_house, ylabels(-.4(.2).6) name(ac_house, replace)
 						//graph save ac_bond, replace
@@ -1179,9 +1534,12 @@ program 			define 	NBProblem
 						estat aroots
 						
 						** House acceleration
-						reg a_house a_stock a_bond a_price L.d_house* L.dd_house* L.r_price L.v_* L.j_* L.m_house*
+						rename a_house house 
+						reg house L.m_* L.d_*_house L.n_*_house L.in_*_house L.md_*_house L.c_*_house L.r_house L.v_* L.a_* L.j_*
+						//reg house L.c_*_house //2nd law
+						//reg house L.m_* L.d_*_house L.in_*_house //2nd law
 						predict e_house, xb
-						replace e_house 				= r_house - e_house		//Convert to error
+						replace e_house 				= house - e_house		//Convert to error
 						** Correlogram
 						ac  e_house, ylabels(-.4(.2).6) name(ac_house, replace)
 						//graph save ac_bond, replace
@@ -1190,13 +1548,13 @@ program 			define 	NBProblem
 						graph combine ac_house pac_house, rows(2) cols(1)
 						drop e_*
 						** ARIMA
-						arima a_house a_stock a_bond a_price D.r_* D.dd_house* D.m_house*, ar(1 2) ma() 
+						arima a_house a_house a_bond a_price D.r_* D.dd_house* D.m_house*, ar(1 2) ma() 
 						estat aroots
 												
 						** House jolt
-						reg j_house j_stock j_bond j_price L.d_house* L.dd_house* L.r_price L.v_* L.a_* L.m_house*
+						reg j_house j_house j_bond j_price L.d_house* L.dd_house* L.r_price L.v_* L.a_* L.m_house*
 						predict e_house, xb
-						replace e_house 				= r_house - e_house		//Convert to error
+						replace e_house 				= house - e_house		//Convert to error
 						** Correlogram
 						ac  e_house, ylabels(-.4(.2).6) name(ac_house, replace)
 						//graph save ac_bond, replace
@@ -1212,7 +1570,7 @@ program 			define 	NBProblem
 					di "Done with house NB."
 					
 				} //end if
-				di "Done with NB-annual."
+				di "Done with NB-ARIMA."
 									
 				******************************
 				** Rogoff 2024 - annual
@@ -1332,24 +1690,6 @@ program 			define 	NBProblem
 			} //end if
 			di "Done with annual."
 								
-			**********************************************
-			** N-body problem
-			**********************************************
-			scalar nbody = 1
-			if nbody == 1 {
-				
-				
-				
-				
-				
-				
-				
-			} //end if
-			di "Done with NB."
-								
-								
-								
-								
 		} //End if
 		di "Done with analysis."
 		
@@ -1396,6 +1736,9 @@ program 			define 	NBProblem
 					
 	} //end if
 	di "Done with analysis."
+	
+	sum r* year if year >1890
+	sum r* year if year >1945
 	
 end
 
