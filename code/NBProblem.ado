@@ -896,63 +896,72 @@ program 			define 	NBProblem
 		scalar arim = 1 
 		if arim == 1 {
 			
-			** Load main 
-			clear all
-			cd_nb_stage
-			use analysis_data, clear
+			***************
+			** Save annual and monthly
+			***************
+			scalar ann = 1
+			if ann == 1 {
 				
-			** Summary stats
-			gen div_shr			= dividend / earnings
-			sum year div_* dividend earnings w_stock if year <= 1983 
-			sum year div_* dividend earnings w_stock if year > 1983 
-			
-			
-			** Set view periods
-			keep if year >= 1890
-			gen period 			= 1
-			replace period		= 2 if year >= 1930
-			replace period		= 3 if year >= 1970
-			replace period		= 4 if year >= 2000
-			//replace period		= 5 if year >= 2001
-			//replace period		= 6 if year >= 2019
-			
-			** Gen dates
-			gen dt 					=	mdy(month,1,year)
-			
-			replace dt				= dt + 25566
-			replace dt 				= dt / 365.25 + 1890
-			summarize
+				** Load main 
+				clear all
+				cd_nb_stage
+				use analysis_data, clear
+					
+				** Summary stats
+				gen div_shr			= dividend / earnings
+				sum year div_* dividend earnings w_stock if year <= 1983 
+				sum year div_* dividend earnings w_stock if year > 1983 
+				
+				
+				** Set view periods
+				keep if year >= 1890
+				gen period 			= 1
+				replace period		= 2 if year >= 1930
+				replace period		= 3 if year >= 1970
+				replace period		= 4 if year >= 2000
+				//replace period		= 5 if year >= 2001
+				//replace period		= 6 if year >= 2019
+				
+				** Gen dates
+				gen dt 					=	mdy(month,1,year)
+				
+				replace dt				= dt + 25566
+				replace dt 				= dt / 365.25 + 1890
+				summarize
 
-			** Graphs settings
-			* Style 3
-			grstyle init
-			grstyle set plain
-			grstyle set color Set1, opacity(50)
-			grstyle set symbolsize tiny
-			grstyle set symbol T T
-			grstyle anglestyle p2symbol 180 
-			grstyle set grid
-			** Additionals
+				** Graphs settings
+				* Style 3
+				grstyle init
+				grstyle set plain
+				grstyle set color Set1, opacity(50)
+				grstyle set symbolsize tiny
+				grstyle set symbol T T
+				grstyle anglestyle p2symbol 180 
+				grstyle set grid
+				** Additionals
+					
+				** Bond
+				** Rogoff
+				** Real bond rate - Rogoff
+				gen rr_bond					= r_bond - r_priceR
 				
-			** Bond
-			** Rogoff
-			** Real bond rate - Rogoff
-			gen rr_bond					= r_bond - r_priceR
-			
-			** Save monthly 
-			cd_nb_stage
-			save monthly_data, replace
-			
-			** Save annual
-			** Drop months
-			keep if month==12
+				** Save monthly 
+				cd_nb_stage
+				save monthly_data, replace
 				
-			** Save 
-			cd_nb_stage
-			save annual_data, replace
+				** Save annual
+				** Drop months
+				keep if month==12
+					
+				** Save 
+				cd_nb_stage
+				save annual_data, replace
+			
+			} //end if
+			di "Done with save annual and monthly."
 			
 			**********************************************
-			** Annual - endogenous
+			** Annual 
 			**********************************************
 			scalar ann = 1
 			if ann == 1 {
@@ -968,6 +977,8 @@ program 			define 	NBProblem
 										
 				******************************
 				** N-Body - Special cases
+				** 1. Rocket
+				** 2. 3-Body
 				******************************
 				scalar nb 					= 1
 				if nb == 1 {
@@ -980,45 +991,84 @@ program 			define 	NBProblem
 
 							di "Primary velocity and accel: `pri'."
 							
+						******************
+						** NB variables
+						** 4.16.25 p.1
+						******************
+						
 						** Velocity
 						gen v_`pri'				= r_`pri' - L.r_`pri' 
-												
+						gen lag_v_`pri'			= L.v_`pri'
+						
 						** Acceleration
 						gen a_`pri'				= v_`pri' - L.v_`pri' 
+						gen lag_a_`pri'			= L.a_`pri'
 						
 						** Jolt (Jerk)
 						gen j_`pri'				= a_`pri' - L.a_`pri' 
+						gen lag_j_`pri'			= L.j_`pri'
 						
-						** Rocket params
+						** Mass
+						gen lag_w_`pri'			= L.w_`pri'
+							
+						******************
+						** Rocket variables
+						** 4.9.25 p.3
+						******************
 						
 						** Percent change in mass - ln (m1 / m0)
-						gen mdot_`pri'			= ln(F1.w_`pri' / w_`pri')
-						gen mdotinv_`pri'		= mdot_`pri' ^ (-1)
+						//gen mdot_`pri'			= ln(F1.w_`pri' / w_`pri')  // this is ln (m0 / m1)
+						//gen mdotinv_`pri'		= mdot_`pri' ^ (-1)			// this is ln (m1 / m0)
 						
 						** Lagged values for rocket
-						gen lag_v_`pri'			= L.v_`pri'
-						gen lag_mdot_`pri'		= L.mdotinv_`pri'
+						//gen lag_mdot_`pri'		= L.mdotinv_`pri'
 						
 						** Ejected velocity u - rocket
-						gen u_`pri'				= mdot_`pri' * F1.a_`pri' + v_`pri'
+						//gen u_`pri'				= mdot_`pri' * F1.a_`pri' + v_`pri'
+						
+						******************
+						** Rocket variables
+						** 4.16.25 p1
+						******************
+						
+						** Separate quantity change from price change here? -- at indu_* indicator 4.16.25
+						
+						** Percent change in mass - ln (m1 / m0)
+						gen lnm_`pri'			= ln(w_`pri' / F1.w_`pri' )  // this is ln (m1 / m0)
+						gen fm_`pri'			= 1 - lnm_`pri' ^ (-1)			
+						gen fminv_`pri'			= fm_`pri' ^ (-1)			
+						gen int_`pri'			= lag_v_`pri' * fminv_`pri'
+											
+						** Ejected velocity u - rocket
+						gen u_`pri'				= F1.v_`pri' + a_`pri'  * fm_`pri'
+						gen indu_`pri'			= w_`pri' > F1.w_`pri'
 						
 						** Secondary
 						foreach sec of global nam  {
 							
 								di "Starting primary: `pri' and secondary: `sec'."
 							
-							** N-Body params
+							******************
+							** NB variables
+							** 4.16.25 p.1
+							******************
 							
 							** Distance
 							gen d_`sec'_`pri'				= r_`sec' - r_`pri' 
+							gen lag_d_`sec'_`pri'			= L.d_`sec'_`pri'
 														
 							** Normed distance
 							gen n_`sec'_`pri'				= abs(d_`sec'_`pri')^3
+							gen lag_n_`sec'_`pri'			= L.n_`sec'_`pri'
 							
 							** Inververse normed distance
 							gen in_`sec'_`pri'				= 1/n_`sec'_`pri'
+							gen lag_in_`sec'_`pri'			= L.in_`sec'_`pri'
 
-							** Rocket params
+							******************
+							** Rocket variables
+							** 4.9.25 p.3
+							******************
 
 							** Mass-distance
 							gen md_`pri'_`sec'				= w_`sec' * d_`sec'_`pri'
@@ -1037,6 +1087,7 @@ program 			define 	NBProblem
 					
 					** Rename mass variables
 					rename w_* m_*
+					rename *_w_* *_m_*
 					
 					** Drop
 					drop r_priceR
@@ -1044,14 +1095,16 @@ program 			define 	NBProblem
 					drop *_price*
 										
 						** Order
-						order n t year month dt period r_* v_* a_* j_* m_* d_* n_* in_* c_* mdot_* mdotinv* u_* lag_*
+						order *, alpha
+						order n t year month dt period r_* v_* a_* j_* m_* lnm* fm* fminv* int_* u_* indu_* d_* n_* in_* c_* lag_*
 				
 					** Save
 					cd_nb_stage
 					save arima_data, replace
 				
 					////////////
-					** Ideal rocket motion
+					** 1. Ideal rocket
+					** ===> Check log term
 					////////////
 					scalar rocket = 1
 					if rocket == 1 {
@@ -1060,65 +1113,142 @@ program 			define 	NBProblem
 						cd_nb_stage
 						use arima_data, clear
 							
-						** Unconditional estimates of ejected mass velocity
+						** Need welfare decomposition of price (valuation) and quanity effects here
+						
+						** Unconditional estimates of ejected mass average velocity
 						** Market price of risk Lambda ~= 0.20: 0.2 percent higher per standard deviation volatility - holds for all three approximately
-						sum u_* r_* rr_* year if year >= 1890 
+						sum u_* r_* v_* rr_* year if year 
 						sum u_* r_* rr_* year if year >= 1945 
+						sum u_* r_* rr_* year if year >= 1981 
 							
-						** Conditional estimates of ejected velocity
-						** Here, the first coefficient b1 is the estimate of velocity of the ejected mass
-						reg a_stock lag_mdot_stock c.lag_v_stock#c.lag_mdot_stock, vce(robust)  
-						reg a_bond  lag_mdot_bond c.lag_v_bond#c.lag_mdot_bond  , vce(robust)
-						reg a_house lag_mdot_house c.lag_v_house#c.lag_mdot_house, vce(robust)
-						** Post war
-						reg a_stock lag_mdot_stock c.lag_v_stock#c.lag_mdot_stock if year>1945, vce(robust)  
-						reg a_bond  lag_mdot_bond c.lag_v_bond#c.lag_mdot_bond if year>1945  , vce(robust)
-						reg a_house lag_mdot_house c.lag_v_house#c.lag_mdot_house if year>1945, vce(robust)
+						** Estimate "u" 
+						** (4.9.25 p.3) estimate of average velocity of the ejected mass
+						** Conditional estimates of mean ejected velocity
+						** Here, the first coefficient b1 is "u" (4.9.25 p.3) estimate of velocity of the ejected mass
 						** Post 1981
-						reg a_stock lag_mdot_stock c.lag_v_stock#c.lag_mdot_stock if year>1981, vce(robust)  
-						reg a_bond  lag_mdot_bond c.lag_v_bond#c.lag_mdot_bond if year>1981  , vce(robust)
-						reg a_house lag_mdot_house c.lag_v_house#c.lag_mdot_house if year>1981, vce(robust)
+						reg a_stock fminv_stock	int_stock	if year>1981, vce(robust)  
+						reg a_bond  fminv_bond 	int_bond	if year>1981, vce(robust)  
+						reg a_house fminv_house int_house	if year>1981, vce(robust)  
+					
+						reg a_house indu_house#c.fminv_house int_house	if year>1981, vce(robust)  
+					
+						** Acceleration a - house
+						reg a_house fminv_house indu_house int_house, vce(robust) 
+						reg a_house fminv_house indu_house int_house
+						predict e_house, xb
+						replace e_house 				= r_house - e_house		//Convert to error
+						** Correlogram
+						ac  e_house, ylabels(-.4(.2).6) name(ac_house, replace)
+						//graph save ac_house, replace
+						pac e_house, ylabels(-.4(.2).6) name(pac_house, replace)
+						//graph save pac_house, replace
+						graph combine ac_house pac_house, rows(2) cols(1)
+						drop e_*
+						** ARIMA
+						arima a_house fminv_house indu_house int_house, ar(1 2) ma() 
+						estat aroots
 						
 					} //end if
 					di "Done with perfect rocket."
-				
-				
+								
 					////////////
 					** 3-body - motion
 					////////////
-					scalar rocket = 1
-					if rocket == 1 {
+					scalar threeb = 1
+					if threeb == 1 {
 						
 						** Load
 						cd_nb_stage
 						use arima_data, clear
 							
-						** Unconditional estimates of ejected mass velocity
 						** Market price of risk Lambda ~= 0.20: 0.2 percent higher per standard deviation volatility - holds for all three approximately
 						sum u_* r_* rr_* year if year >= 1890 
 						sum u_* r_* rr_* year if year >= 1945 
 							
-						** Conditional estimates of ejected velocity
-						** Here, the first coefficient b1 is the estimate of velocity of the ejected mass
-						reg a_stock lag_mdot_stock c.lag_v_stock#c.lag_mdot_stock, vce(robust)  
-						reg a_bond  lag_mdot_stock c.lag_v_bond#c.lag_mdot_bond  , vce(robust)
-						reg a_house lag_mdot_stock c.lag_v_house#c.lag_mdot_house, vce(robust)
-						** Post war
-						reg a_stock lag_mdot_stock c.lag_v_stock#c.lag_mdot_stock if year>1945, vce(robust)  
-						reg a_bond  lag_mdot_stock c.lag_v_bond#c.lag_mdot_bond if year>1945  , vce(robust)
-						reg a_house lag_mdot_stock c.lag_v_house#c.lag_mdot_house if year>1945, vce(robust)
-						** Post 1981
-						reg a_stock lag_mdot_stock c.lag_v_stock#c.lag_mdot_stock if year>1981, vce(robust)  
-						reg a_bond  lag_mdot_stock c.lag_v_bond#c.lag_mdot_bond if year>1981  , vce(robust)
-						reg a_house lag_mdot_stock c.lag_v_house#c.lag_mdot_house if year>1981, vce(robust)
-														
+						** Position r - stock  = AR(2) process by 3-body theory
+						reg r_stock lag_m_bond lag_m_house lag_d_*_stock lag_in_*_stock L.r_stock L2.r_stock, vce(robust) //excludes lags
+						reg r_stock lag_m_bond lag_m_house lag_d_*_stock lag_in_*_stock //excludes lags
+						predict e_stock, xb
+						replace e_stock 				= r_stock - e_stock		//Convert to error
+						** Correlogram
+						ac  e_stock, ylabels(-.4(.2).6) name(ac_stock, replace)
+						//graph save ac_stock, replace
+						pac e_stock, ylabels(-.4(.2).6) name(pac_stock, replace)
+						//graph save pac_stock, replace
+						graph combine ac_stock pac_stock, rows(2) cols(1)
+						drop e_*
+						** ARIMA
+						arima r_stock lag_m_bond lag_m_house lag_d_*_stock lag_in_*_stock, ar(1 2) ma() 
+						estat aroots
 						
-						asdf_3B
+						** Position r - house = AR(2) process by 3-body theory
+						reg r_house lag_m_bond lag_m_stock lag_d_*_house lag_in_*_house L.r_house L2.r_house, vce(robust) //excludes lags
+						reg r_house lag_m_bond lag_m_stock lag_d_*_house lag_in_*_house //excludes lags
+						predict e_house, xb
+						replace e_house 				= r_house - e_house		//Convert to error
+						** Correlogram
+						ac  e_house, ylabels(-.4(.2).6) name(ac_house, replace)
+						//graph save ac_house, replace
+						pac e_house, ylabels(-.4(.2).6) name(pac_house, replace)
+						//graph save pac_house, replace
+						graph combine ac_house pac_house, rows(2) cols(1)
+						drop e_*
+						** ARIMA
+						arima r_house lag_m_bond lag_m_stock lag_d_*_house lag_in_*_house, ar(1 2) ma() 
+						estat aroots
+						
+						** Velocity v - house = AR(1) process by 3-body theory
+						reg v_house lag_m_bond lag_m_stock lag_d_*_house lag_in_*_house L.v_house, vce(robust) //look at flexible
+						reg v_house lag_m_bond lag_m_stock lag_d_*_house lag_in_*_house //excludes lags - reg for correlogram
+						predict e_house, xb
+						replace e_house 				= r_house - e_house		//Convert to error
+						** Correlogram
+						ac  e_house, ylabels(-.4(.2).6) name(ac_house, replace)
+						//graph save ac_house, replace
+						pac e_house, ylabels(-.4(.2).6) name(pac_house, replace)
+						//graph save pac_house, replace
+						graph combine ac_house pac_house, rows(2) cols(1)
+						drop e_*
+						** ARIMA
+						arima v_house lag_m_bond lag_m_stock lag_d_*_house lag_in_*_house, ar(1) ma() 					
+						estat aroots
+						
+						** Acceleration a - house = AR(0) process by 3-body theory
+						reg a_house c.lag_m_stock#c.lag_d_stock_house#c.lag_in_stock_house c.lag_m_bond#c.lag_d_bond_house#c.lag_in_bond_house , vce(robust) //excludes lags
+						reg a_house lag_m_bond lag_m_stock lag_d_*_house lag_in_*_house //excludes lags
+						predict e_house, xb
+						replace e_house 				= r_house - e_house		//Convert to error
+						** Correlogram
+						ac  e_house, ylabels(-.4(.2).6) name(ac_house, replace)
+						//graph save ac_house, replace
+						pac e_house, ylabels(-.4(.2).6) name(pac_house, replace)
+						//graph save pac_house, replace
+						graph combine ac_house pac_house, rows(2) cols(1)
+						drop e_*
+						** ARIMA
+						arima a_house lag_m_bond lag_m_stock lag_d_*_house lag_in_*_house, ar(1) ma() 
+						arima a_house lag_m_bond lag_m_stock lag_d_*_house lag_in_*_house, ar() ma(1) 
+						estat aroots
+						
+						** Jolt j - house = AR(0) process by 3-body theory
+						reg j_house lag_m_bond lag_m_stock lag_d_*_house lag_in_*_house L.lag_m_bond L.lag_m_stock L.lag_d_stock_house L.lag_in_bond_house , vce(robust) //excludes lags
+						reg j_house lag_m_bond lag_m_stock lag_d_*_house lag_in_*_house //excludes lags
+						predict e_house, xb
+						replace e_house 				= r_house - e_house		//Convert to error
+						** Correlogram
+						ac  e_house, ylabels(-.4(.2).6) name(ac_house, replace)
+						//graph save ac_house, replace
+						pac e_house, ylabels(-.4(.2).6) name(pac_house, replace)
+						//graph save pac_house, replace
+						graph combine ac_house pac_house, rows(2) cols(1)
+						drop e_*
+						** ARIMA
+						arima j_house lag_m_bond lag_m_stock lag_d_*_house lag_in_*_house, ar(1 2) ma() 
+						estat aroots
 						
 					} //end if
 					di "Done with 3-body."
-					
-					
+										
 					////////////
 					** Rocket + Gravity
 					////////////
@@ -1129,7 +1259,25 @@ program 			define 	NBProblem
 						cd_nb_stage
 						use arima_data, clear
 							
-						** 	
+							
+							
+							
+							
+							
+							
+							
+							
+							
+							
+							
+							
+							
+							
+							
+							
+							
+							
+						asdf_combined
 							
 					} //end if
 					di "Done with Merged."
@@ -1284,8 +1432,9 @@ program 			define 	NBProblem
 					
 				******************************
 				** N-Body - ARIMA + Motion
+				** Archive 4.16.25
 				******************************
-				scalar nb 					= 1
+				scalar nb 					= 1111
 				if nb == 1 {
 				
 					** Relative distances
