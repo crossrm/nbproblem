@@ -467,6 +467,7 @@ program 			define 	NBProblem
 				replace month 				= month * 12 + 0.5 if month !=0
 				replace month 				= 12 if month==0
 				gen check 					= 1/0.04166667
+				drop check
 				
 				** Make nominal -- multiply by 2000 mean house price $119,600 (US 2000 Census)
 				replace house_price			= house_price * 119600 / 100
@@ -906,13 +907,12 @@ program 			define 	NBProblem
 				clear all
 				cd_nb_stage
 				use analysis_data, clear
-					
+				
 				** Summary stats
 				gen div_shr			= dividend / earnings
 				sum year div_* dividend earnings w_stock if year <= 1983 
 				sum year div_* dividend earnings w_stock if year > 1983 
-				
-				
+								
 				** Set view periods
 				keep if year >= 1890
 				gen period 			= 1
@@ -938,13 +938,97 @@ program 			define 	NBProblem
 				grstyle set symbol T T
 				grstyle anglestyle p2symbol 180 
 				grstyle set grid
-				** Additionals
+									
+				*******************************
+				** Price, quantity, new issue
+				** Rocket accretion / ablation
+				*******************************
+				scalar issue = 1
+				if issue == 1 {
 					
-				** Bond
-				** Rogoff
-				** Real bond rate - Rogoff
-				gen rr_bond					= r_bond - r_priceR
+					** Bond
+					** Rogoff
+					** Real bond rate - Rogoff
+					gen rr_bond					= r_bond - r_priceR
+					
+					** Rename prices
+					rename snp500 p_stock
+					rename house_price p_house
+					
+					** Generate quantities
+					rename house_units q_house							//units
+					gen q_stock					= w_stock / p_stock		//billions of shares
+									
+					****************
+					** Bond accretion
+					****************
+					** Gen bond price and quantity
+					** Use simple PV approach for change in quantity - Notes 4.18.25 p3
+					**Set initial price at $1000 par value
+					gen q_bond 					= w_bond / 1000	* 1000		//millions of "bonds" - $1000 face value each
 				
+					** Gen bond - current period issuance - PV method
+					** Annual data market capitalization size, monthly rates - Use average current and previous year rate 
+					sort year
+					by year: egen r_current		= sum(r_bond)
+					replace r_current			= r_current / 12
+					sort t
+					tsset t
+					gen r_prior					= L12.r_current
+					gen q_prior					= L12.q_bond
+					gen q_change				= q_bond - q_prior
+					gen r_dot					= (1+r_current)^-10
+					gen new_issue				= q_bond - r_prior/r_current*q_prior*(1-r_dot) - q_prior*r_dot //millions of bonds - $1000 face value each - current year
+					** Gen new_issue (monthly rate)
+					gen new_issue_m				= new_issue / 12												//millions of bonds - $1000 face value each - current month
+					** Change in value of prior year outstanding
+					gen cv_bond					= q_bond - new_issue - q_prior
+					** Capital accretion - Bennet quantity indicator - Cross Fare 2009
+					gen acc_bond				= new_issue * (r_current + r_prior) / 2 
+					gen acc_bondm				= new_issue_m * (r_bond + L.r_bond) / 2
+									
+						order year month t w_* r_* p_* q_* cv_* *_current *_prior new_issue* acc_* *_dot
+				
+					** Clean up bonds
+					sum *_prior *_dot *_change *_current
+					drop *_prior *_dot *_change *_current
+					rename new_issue ni_bondy
+					rename new_issue_m ni_bondm
+				
+					****************
+					** Stock accretion
+					****************					
+					sort year
+					by year: egen p_current		= sum(p_stock)
+					replace p_current			= p_current / 12
+					sort t
+					tsset t
+					gen p_prior					= L12.p_current
+					gen q_prior					= L12.q_stock
+					gen new_issue				= q_stock - q_prior 		//directly calculable by S&P share-weighting
+					gen acc_stock				= new_issue * (p_current + p_prior) / 2 
+					** Monthly
+					gen new_issue_m				= (q_stock - L.q_stock)					
+					gen acc_stockm				= new_issue_m * (p_stock + L.p_stock) / 2			// UNITS?
+					
+					
+					gen acc_stockm				= new_issue 					// UNITS?
+						order year month t w_* r_* p_* q_* cv_* *_current *_prior *_change acc_* new_issue* //*_dot
+					
+					asdf_acc
+					
+					
+						
+					
+				
+				
+				asdf_bond
+					
+				
+					
+				} //end if
+				di "Done with new issue."
+					
 				** Save monthly 
 				cd_nb_stage
 				save monthly_data, replace
@@ -1010,6 +1094,9 @@ program 			define 	NBProblem
 						
 						** Mass
 						gen lag_w_`pri'			= L.w_`pri'
+						
+						** Ablation
+						//gen ab_`pri'			= ni_`pri'
 							
 						******************
 						** Rocket variables
@@ -1096,6 +1183,7 @@ program 			define 	NBProblem
 										
 						** Order
 						order *, alpha
+						order *stock* *bond* *house* *price*
 						order n t year month dt period r_* v_* a_* j_* m_* lnm* fm* fminv* int_* u_* indu_* d_* n_* in_* c_* lag_*
 				
 					** Save
@@ -1104,7 +1192,6 @@ program 			define 	NBProblem
 				
 					////////////
 					** 1. Ideal rocket
-					** ===> Check log term
 					////////////
 					scalar rocket = 1
 					if rocket == 1 {
@@ -1122,9 +1209,11 @@ program 			define 	NBProblem
 						sum u_* r_* rr_* year if year >= 1981 
 							
 						** Estimate "u" 
+						** If u_hat is positive, velocity interaction term == negative 1 -- ablating, switching signs -- accreting 
 						** (4.9.25 p.3) estimate of average velocity of the ejected mass
 						** Conditional estimates of mean ejected velocity
 						** Here, the first coefficient b1 is "u" (4.9.25 p.3) estimate of velocity of the ejected mass
+						** Updated to 4.16.25 p1 -- inverse of the fM variable less interaction term int_
 						** Post 1981
 						reg a_stock fminv_stock	int_stock	if year>1981, vce(robust)  
 						reg a_bond  fminv_bond 	int_bond	if year>1981, vce(robust)  
@@ -1150,6 +1239,54 @@ program 			define 	NBProblem
 						
 					} //end if
 					di "Done with perfect rocket."
+					
+					////////////
+					** 1.1 Rocket - Mass transfer
+					////////////
+					scalar rocket = 1
+					if rocket == 1 {
+						
+						** Load
+						cd_nb_stage
+						use arima_data, clear
+							
+						** Need welfare decomposition of price (valuation) and quanity effects here
+						
+						
+						
+						omojmnlklkk
+							
+						** Estimate "u" 
+						** If u_hat is positive, velocity interaction term == negative 1 -- ablating, switching signs -- accreting 
+						** (4.9.25 p.3) estimate of average velocity of the ejected mass
+						** Conditional estimates of mean ejected velocity
+						** Here, the first coefficient b1 is "u" (4.9.25 p.3) estimate of velocity of the ejected mass
+						** Updated to 4.16.25 p1 -- inverse of the fM variable less interaction term int_
+						** Post 1981
+						reg a_stock fminv_stock	int_stock	if year>1981, vce(robust)  
+						reg a_bond  fminv_bond 	int_bond	if year>1981, vce(robust)  
+						reg a_house fminv_house int_house	if year>1981, vce(robust)  
+					
+						reg a_house indu_house#c.fminv_house int_house	if year>1981, vce(robust)  
+					
+						** Acceleration a - house
+						reg a_house fminv_house indu_house int_house, vce(robust) 
+						reg a_house fminv_house indu_house int_house
+						predict e_house, xb
+						replace e_house 				= r_house - e_house		//Convert to error
+						** Correlogram
+						ac  e_house, ylabels(-.4(.2).6) name(ac_house, replace)
+						//graph save ac_house, replace
+						pac e_house, ylabels(-.4(.2).6) name(pac_house, replace)
+						//graph save pac_house, replace
+						graph combine ac_house pac_house, rows(2) cols(1)
+						drop e_*
+						** ARIMA
+						arima a_house fminv_house indu_house int_house, ar(1 2) ma() 
+						estat aroots
+						
+					} //end if
+					di "Done with transfer rocket."
 								
 					////////////
 					** 3-body - motion
