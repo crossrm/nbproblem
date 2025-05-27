@@ -884,7 +884,6 @@ program 			define 	NBProblem
 	} //end if
 	di "Done with load and prep."
 
-
 	***********************************************************
 	** Analysis & Figures
 	***********************************************************
@@ -940,7 +939,7 @@ program 			define 	NBProblem
 				grstyle set grid
 									
 				*******************************
-				** Price, quantity, new issue
+				** Calc Price, quantity, new issue
 				** Rocket accretion / ablation
 				*******************************
 				scalar issue = 1
@@ -958,15 +957,14 @@ program 			define 	NBProblem
 					** Generate quantities
 					rename house_units q_house							//units
 					gen q_stock					= w_stock / p_stock		//billions of shares
-									
+														
 					****************
 					** Bond accretion
 					****************
 					** Gen bond price and quantity
 					** Use simple PV approach for change in quantity - Notes 4.18.25 p3
-					**Set initial price at $1000 par value
+					**Set initial price (each period) at $1000 par value
 					gen q_bond 					= w_bond / 1000	* 1000		//millions of "bonds" - $1000 face value each
-				
 					** Gen bond - current period issuance - PV method
 					** Annual data market capitalization size, monthly rates - Use average current and previous year rate 
 					sort year
@@ -976,55 +974,135 @@ program 			define 	NBProblem
 					tsset t
 					gen r_prior					= L12.r_current
 					gen q_prior					= L12.q_bond
-					gen q_change				= q_bond - q_prior
+//					gen q_change				= q_bond - q_prior
 					gen r_dot					= (1+r_current)^-10
-					gen new_issue				= q_bond - r_prior/r_current*q_prior*(1-r_dot) - q_prior*r_dot //millions of bonds - $1000 face value each - current year
-					** Gen new_issue (monthly rate)
-					gen new_issue_m				= new_issue / 12												//millions of bonds - $1000 face value each - current month
+					gen new_issue				= q_bond - q_prior * (r_prior / r_current * (1-r_dot) - r_dot) //millions of bonds - $1000 face value each - current year
+					** Recover prices - Notes 5.16.25 update (orange) on Notes 4.18.25 p3
+					gen p_current				= (q_bond - new_issue) / q_prior
+					gen p_prior					= 1
+
+						order year month t w_* r_* p_* q_* *_current *_prior new_issue* *_dot
+				
 					** Change in value of prior year outstanding
-					gen cv_bond					= q_bond - new_issue - q_prior
 					** Capital accretion - Bennet quantity indicator - Cross Fare 2009
-					gen acc_bond				= new_issue * (r_current + r_prior) / 2 
-					gen acc_bondm				= new_issue_m * (r_bond + L.r_bond) / 2
-									
-						order year month t w_* r_* p_* q_* cv_* *_current *_prior new_issue* acc_* *_dot
+					** Decompose accretion - Notes 5.16.25 p.2 
+					gen acc_sup_bond			= new_issue * (p_current + p_prior) / 2 					//Billions of dollars				
+					gen acc_dem_bond			= (p_current - p_prior) * new_issue / 2 					//Billions of dollars	
+					
+						** Gen new_issue (monthly rate)
+					gen r_dotm					= (1+r_bond)^-10
+					gen new_issue_m				= new_issue / 12											//millions of bonds - $1000 face value each - current month
+					gen p_bondm					= L1.r_bond / r_bond * (1-r_dotm) - r_dotm
+					gen acc_sup_bondm			= new_issue_m * (p_bondm + p_prior) / 2						//Billions of dollars			
+					gen acc_dem_bondm			= (p_bondm - p_prior) * new_issue_m / 2 					//Billions of dollars	
+					
+					order year month t w_* r_* p_* q_* *_current *_prior new_issue* acc_* *_dot
 				
 					** Clean up bonds
-					sum *_prior *_dot *_change *_current
-					drop *_prior *_dot *_change *_current
+						sum *_prior *_dot *_current p_bondm
+					drop *_prior *_dot *_current p_bondm
 					rename new_issue ni_bondy
 					rename new_issue_m ni_bondm
+					
+					****************
+					** Bond accretion - archive 5.16.25
+					****************
+					scalar archive = 1111
+					if archive == 1 {
+						
+						** Gen bond price and quantity
+						** Use simple PV approach for change in quantity - Notes 4.18.25 p3
+						**Set initial price (each period) at $1000 par value
+						gen q_bond 					= w_bond / 1000	* 1000		//millions of "bonds" - $1000 face value each
+						** Gen bond - current period issuance - PV method
+						** Annual data market capitalization size, monthly rates - Use average current and previous year rate 
+						sort year
+						by year: egen r_current		= sum(r_bond)
+						replace r_current			= r_current / 12
+						sort t
+						tsset t
+						gen r_prior					= L12.r_current
+						gen q_prior					= L12.q_bond
+						gen q_change				= q_bond - q_prior
+						gen r_dot					= (1+r_current)^-10
+						gen new_issue				= q_bond - r_prior/r_current*q_prior*(1-r_dot) - q_prior*r_dot //millions of bonds - $1000 face value each - current year
+						
+							order year month t w_* r_* p_* q_* *_current *_prior new_issue* *_dot
+					
+						** Gen new_issue (monthly rate)
+						gen new_issue_m				= new_issue / 12												//millions of bonds - $1000 face value each - current month
+						** Change in value of prior year outstanding
+						gen cv_bond					= q_bond - new_issue - q_prior
+						** Capital accretion - Bennet quantity indicator - Cross Fare 2009
+						** Decompose accretion - Notes 5.16.25 p.2 
+						gen acc_sup_bond				= new_issue * (r_current + r_prior) / 2 
+						gen acc_sup_bondm				= new_issue_m * (r_bond + L.r_bond) / 2
+						gen acc_dem_bond				= (r_current - r_prior) * new_issue / 2 
+						gen acc_dem_bondm				= (r_current - r_prior) * new_issue_m / 2 
+										
+							order year month t w_* r_* p_* q_* cv_* *_current *_prior new_issue* acc_* *_dot
+					
+						** Clean up bonds
+						sum *_prior *_dot *_change *_current
+						drop *_prior *_dot *_change *_current
+						rename new_issue ni_bondy
+						rename new_issue_m ni_bondm
+						
+					} //end if
+					di "Done with bond archive."
 				
 					****************
 					** Stock accretion
 					****************					
-					sort year
-					by year: egen p_current		= sum(p_stock)
-					replace p_current			= p_current / 12
+					gen p_current				= p_stock
 					sort t
 					tsset t
-					gen p_prior					= L12.p_current
+					gen p_prior					= L12.p_stock
 					gen q_prior					= L12.q_stock
 					gen new_issue				= q_stock - q_prior 		//directly calculable by S&P share-weighting
-					gen acc_stock				= new_issue * (p_current + p_prior) / 2 
-					** Monthly
 					gen new_issue_m				= (q_stock - L.q_stock)					
-					gen acc_stockm				= new_issue_m * (p_stock + L.p_stock) / 2			// UNITS?
+					** Decompose accretion - Notes 5.16.25 p.2 
+					gen acc_sup_stock				= new_issue 	* (p_current + p_prior) / 2 
+					gen acc_sup_stockm				= new_issue_m 	* (p_stock + L.p_stock) / 2			
+					gen acc_dem_stock				= (p_current - p_prior) 	* new_issue / 2 
+					gen acc_dem_stockm				= (p_current - p_prior) 	* new_issue_m / 2 
 					
+					rename new_issue 	ni_stocky
+					rename new_issue_m	ni_stockm
 					
-					gen acc_stockm				= new_issue 					// UNITS?
-						order year month t w_* r_* p_* q_* cv_* *_current *_prior *_change acc_* new_issue* //*_dot
+					order year month t w_* r_* p_* q_* *_current *_prior acc_* ni_* 
+										
+					asdf_stock
 					
-					asdf_acc
+					drop *_prior *_current
 					
+					****************
+					** House accretion
+					****************	
+					gen p_current				= p_house
+					sort t
+					tsset t
+					gen p_prior					= L12.p_house
+					gen q_prior					= L12.q_house
+					gen new_issue				= q_house - q_prior 		//directly calculable by S&P share-weighting
+					gen new_issue_m				= (q_house - L.q_house)					
+					** Decompose accretion - Notes 5.16.25 p.2 
+					gen acc_sup_house				= new_issue 	* (p_current + p_prior) / 2 
+					gen acc_sup_housem				= new_issue_m 	* (p_house + L.p_house) / 2			
+					gen acc_dem_house				= (p_current - p_prior) 	* new_issue / 2 
+					gen acc_dem_housem				= (p_current - p_prior) 	* new_issue_m / 2 
 					
-						
+					rename new_issue 	ni_housey
+					rename new_issue_m	ni_housem
 					
-				
-				
-				asdf_bond
+					order year month t w_* r_* p_* q_* *_current *_prior acc_* ni_* 
+					drop *_prior *_current
 					
-				
+					****************
+					** Look at net ablations over time
+					****************	
+					sum year month t w_* r_* p_* q_* acc_* ni_* 
+					
 					
 				} //end if
 				di "Done with new issue."
@@ -1067,7 +1145,9 @@ program 			define 	NBProblem
 				scalar nb 					= 1
 				if nb == 1 {
 				
-					** Relative distances
+					**************************
+					** Prep Relative distances
+					**************************
 					global nam "stock bond house price"
 					** Stats loop
 					** Primary
@@ -1121,6 +1201,8 @@ program 			define 	NBProblem
 						** Separate quantity change from price change here? -- at indu_* indicator 4.16.25
 						
 						** Percent change in mass - ln (m1 / m0)
+						** Assumes change in mass is mass ablation/accretion -- but only some of the mass is ablating, 
+						**   A portion is just disappearing (price change with no quantity change. Where does it go?
 						gen lnm_`pri'			= ln(w_`pri' / F1.w_`pri' )  // this is ln (m1 / m0)
 						gen fm_`pri'			= 1 - lnm_`pri' ^ (-1)			
 						gen fminv_`pri'			= fm_`pri' ^ (-1)			
