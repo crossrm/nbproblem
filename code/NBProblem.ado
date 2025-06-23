@@ -938,6 +938,10 @@ program 			define 	NBProblem
 				grstyle anglestyle p2symbol 180 
 				grstyle set grid
 									
+				** Temp save
+				cd_nb_stage
+				save temp_save, replace
+									
 				*******************************
 				** Calc Price, quantity, new issue
 				** Rocket accretion / ablation
@@ -945,6 +949,10 @@ program 			define 	NBProblem
 				scalar issue = 1
 				if issue == 1 {
 					
+					** Reload
+					cd_nb_stage
+					use temp_save, clear
+												
 					** Bond
 					** Rogoff
 					** Real bond rate - Rogoff
@@ -955,126 +963,98 @@ program 			define 	NBProblem
 					rename house_price p_house
 					
 					** Generate quantities
-					rename house_units q_house							//units
-					gen q_stock					= w_stock / p_stock		//billions of shares
+					rename house_units q_house	
+					replace q_house 			= q_house / 1000 /1000 			//Billions of units (houses)
+					gen q_stock					= w_stock / p_stock				//billions of shares
 														
 					****************
 					** Bond accretion
+					** Bond monthly doesn't work, due to annual market cap data (replace with monthly bond market cap estimates)
 					****************
 					** Gen bond price and quantity
-					** Use simple PV approach for change in quantity - Notes 4.18.25 p3
+					** Use simple PV approach for change in quantity - Notes 4.18.25 p3, updated and corrected 5.28.25 p1
 					**Set initial price (each period) at $1000 par value
-					gen q_bond 					= w_bond / 1000	* 1000		//millions of "bonds" - $1000 face value each
+					gen q_bond 					= w_bond / 1000	* 1000		//millions of "bonds" - $1000 face value each, or billions of dollars
 					** Gen bond - current period issuance - PV method
 					** Annual data market capitalization size, monthly rates - Use average current and previous year rate 
-					sort year
-					by year: egen r_current		= sum(r_bond)
-					replace r_current			= r_current / 12
+					gen r_current				= r_bond
+					gen q_current				= q_bond
 					sort t
 					tsset t
 					gen r_prior					= L12.r_current
-					gen q_prior					= L12.q_bond
-//					gen q_change				= q_bond - q_prior
-					gen r_dot					= (1+r_current)^-10
-					gen new_issue				= q_bond - q_prior * (r_prior / r_current * (1-r_dot) - r_dot) //millions of bonds - $1000 face value each - current year
-					** Recover prices - Notes 5.16.25 update (orange) on Notes 4.18.25 p3
-					gen p_current				= (q_bond - new_issue) / q_prior
-					gen p_prior					= 1
-
-						order year month t w_* r_* p_* q_* *_current *_prior new_issue* *_dot
-				
+					gen q_prior					= L12.q_current				//millions of "bonds" - $1000 face value each, or billions of dollars
+					gen coupon_prior			= r_prior * 10
+					gen rate_current			= r_current / 100
+					** Current value of prior cash flows (prior coupon (r * 10, valued at current rate r)
+					** 9 years (of original 10) remaining, but use 10 for price effect, net of duration
+					gen v_cfl					= coupon_prior * (1- (1+rate_current )^-10) / rate_current 	//per $1000 bond
+					** Value of return of Face value ($1000) (valued at current rate)
+					gen v_future				= 1000 * (1+rate_current )^-10								//per $1000 bond
+					** Gen current price of prior year bonds
+					gen v_total 				= v_cfl + v_future											//per prior year $1000 bond
+					** Current value of all prior year bonds
+					gen v_current				= v_total * q_prior / 1000									//billions of dollars - millions of bonds ($1000 face value)
+					** New issue - total current value (q_bond * 1000), less value of prior issue
+					gen new_issue				= q_bond - v_current 										//billions of dollars - millions of bonds ($1000 face value)
+					
+					** For accretion
+					** Gen current price of prior year bonds
+					gen p_current				= v_total													//per prior year $1000 bond
+					
 					** Change in value of prior year outstanding
 					** Capital accretion - Bennet quantity indicator - Cross Fare 2009
 					** Decompose accretion - Notes 5.16.25 p.2 
-					gen acc_sup_bond			= new_issue * (p_current + p_prior) / 2 					//Billions of dollars				
-					gen acc_dem_bond			= (p_current - p_prior) * new_issue / 2 					//Billions of dollars	
+					gen p_prior					= 1000
+					gen acc_sup_bond			= new_issue * (p_current + p_prior) / 2 				//billions of dollars - millions of bonds ($1000 face value)				
+					** Use new issue (q' - q) from line 979 above, but reverse sign (q' + q)
+					** Correct 5.29.25 expressed in millions of dollars. 	
+					gen acc_dem_bond			= (p_current - p_prior) * (q_bond + v_current) / 2 		// $0.584 x 3460 bonds (in millions of bonds (billions of dollars)) -
 					
-						** Gen new_issue (monthly rate)
-					gen r_dotm					= (1+r_bond)^-10
-					gen new_issue_m				= new_issue / 12											//millions of bonds - $1000 face value each - current month
-					gen p_bondm					= L1.r_bond / r_bond * (1-r_dotm) - r_dotm
-					gen acc_sup_bondm			= new_issue_m * (p_bondm + p_prior) / 2						//Billions of dollars			
-					gen acc_dem_bondm			= (p_bondm - p_prior) * new_issue_m / 2 					//Billions of dollars	
+					** Gen new_issue (monthly rate)
+					//gen new_issue_m				= new_issue / 12											//millions of bonds - $1000 face value each - current month
+					//gen acc_sup_bondm			= new_issue_m * (p_bondm + p_prior) / 2						// Billions of dollars
+					* Use new issue monthly from above (new issue annual /12), but reverse sign (q' + q) 
+					//gen acc_dem_bondm			= (p_bondm - p_prior) * (q_bond + v_current / 1000))/12 / 2 					//Billions of dollars	
 					
-					order year month t w_* r_* p_* q_* *_current *_prior new_issue* acc_* *_dot
+						sum *bond* v_* coupon* rate* *current *prior new* acc_*
+												
+					** Order
+						order *bond* v_* coupon* rate* *current *prior new*				
+					order year month t w_* r_* p_* q_* *_current *_prior new_issue* acc_*
 				
 					** Clean up bonds
-						sum *_prior *_dot *_current p_bondm
-					drop *_prior *_dot *_current p_bondm
+					drop *_prior *_current v_* coupon* rate* *prior 
 					rename new_issue ni_bondy
-					rename new_issue_m ni_bondm
-					
-					****************
-					** Bond accretion - archive 5.16.25
-					****************
-					scalar archive = 1111
-					if archive == 1 {
+					//rename new_issue_m ni_bondm
 						
-						** Gen bond price and quantity
-						** Use simple PV approach for change in quantity - Notes 4.18.25 p3
-						**Set initial price (each period) at $1000 par value
-						gen q_bond 					= w_bond / 1000	* 1000		//millions of "bonds" - $1000 face value each
-						** Gen bond - current period issuance - PV method
-						** Annual data market capitalization size, monthly rates - Use average current and previous year rate 
-						sort year
-						by year: egen r_current		= sum(r_bond)
-						replace r_current			= r_current / 12
-						sort t
-						tsset t
-						gen r_prior					= L12.r_current
-						gen q_prior					= L12.q_bond
-						gen q_change				= q_bond - q_prior
-						gen r_dot					= (1+r_current)^-10
-						gen new_issue				= q_bond - r_prior/r_current*q_prior*(1-r_dot) - q_prior*r_dot //millions of bonds - $1000 face value each - current year
+						sum year month t w_* r_* p_* q_* ni* acc_*
 						
-							order year month t w_* r_* p_* q_* *_current *_prior new_issue* *_dot
-					
-						** Gen new_issue (monthly rate)
-						gen new_issue_m				= new_issue / 12												//millions of bonds - $1000 face value each - current month
-						** Change in value of prior year outstanding
-						gen cv_bond					= q_bond - new_issue - q_prior
-						** Capital accretion - Bennet quantity indicator - Cross Fare 2009
-						** Decompose accretion - Notes 5.16.25 p.2 
-						gen acc_sup_bond				= new_issue * (r_current + r_prior) / 2 
-						gen acc_sup_bondm				= new_issue_m * (r_bond + L.r_bond) / 2
-						gen acc_dem_bond				= (r_current - r_prior) * new_issue / 2 
-						gen acc_dem_bondm				= (r_current - r_prior) * new_issue_m / 2 
-										
-							order year month t w_* r_* p_* q_* cv_* *_current *_prior new_issue* acc_* *_dot
-					
-						** Clean up bonds
-						sum *_prior *_dot *_change *_current
-						drop *_prior *_dot *_change *_current
-						rename new_issue ni_bondy
-						rename new_issue_m ni_bondm
+						di "Done with bond acc section."
 						
-					} //end if
-					di "Done with bond archive."
-				
 					****************
 					** Stock accretion
 					****************					
-					gen p_current				= p_stock
+					gen p_current				= p_stock					// Index value (dollars)
 					sort t
 					tsset t
-					gen p_prior					= L12.p_stock
-					gen q_prior					= L12.q_stock
-					gen new_issue				= q_stock - q_prior 		//directly calculable by S&P share-weighting
-					gen new_issue_m				= (q_stock - L.q_stock)					
+					gen p_prior					= L12.p_stock				// dollars
+					gen q_prior					= L12.q_stock				// billions of shares (units)
+					gen new_issue				= q_stock - q_prior 		// directly calculable by S&P share-weighting // billions of shares (units)
+					gen new_issue_m				= (q_stock - L.q_stock)		// billions of shares (units)			
 					** Decompose accretion - Notes 5.16.25 p.2 
-					gen acc_sup_stock				= new_issue 	* (p_current + p_prior) / 2 
-					gen acc_sup_stockm				= new_issue_m 	* (p_stock + L.p_stock) / 2			
-					gen acc_dem_stock				= (p_current - p_prior) 	* new_issue / 2 
-					gen acc_dem_stockm				= (p_current - p_prior) 	* new_issue_m / 2 
+					gen acc_sup_stock				= new_issue 	* (p_current + p_prior) / 2 				// billions of dollars
+					gen acc_sup_stockm				= new_issue_m 	* (p_stock + L.p_stock) / 2					// billions of dollars
+					gen acc_dem_stock				= (p_current - p_prior) 	*  (q_stock + q_prior) / 2 		// billions of dollars
+					gen acc_dem_stockm				= (p_current - p_prior) 	*  (q_stock + L.q_stock) / 2 	// billions of dollars
 					
 					rename new_issue 	ni_stocky
 					rename new_issue_m	ni_stockm
 					
 					order year month t w_* r_* p_* q_* *_current *_prior acc_* ni_* 
-										
-					asdf_stock
-					
+						
 					drop *_prior *_current
+					
+						di "Done with stock acc section."
 					
 					****************
 					** House accretion
@@ -1082,31 +1062,32 @@ program 			define 	NBProblem
 					gen p_current				= p_house
 					sort t
 					tsset t
-					gen p_prior					= L12.p_house
-					gen q_prior					= L12.q_house
+					gen p_prior					= L12.p_house				// Dollars
+					gen q_prior					= L12.q_house				// Billions of units (houses)
 					gen new_issue				= q_house - q_prior 		//directly calculable by S&P share-weighting
 					gen new_issue_m				= (q_house - L.q_house)					
 					** Decompose accretion - Notes 5.16.25 p.2 
-					gen acc_sup_house				= new_issue 	* (p_current + p_prior) / 2 
-					gen acc_sup_housem				= new_issue_m 	* (p_house + L.p_house) / 2			
-					gen acc_dem_house				= (p_current - p_prior) 	* new_issue / 2 
-					gen acc_dem_housem				= (p_current - p_prior) 	* new_issue_m / 2 
+					gen acc_sup_house				= new_issue 	* (p_current + p_prior) / 2 			
+					gen acc_sup_housem				= new_issue_m 	* (p_house + L.p_house) / 2
+					* Use new issue, but reverse sign for average quantity (q' + q)/2
+					gen acc_dem_house				= (p_current - p_prior) 	* (q_house + q_prior)	/ 2 
+					gen acc_dem_housem				= (p_current - p_prior) 	* (q_house + L.q_house)	/ 2 
 					
 					rename new_issue 	ni_housey
 					rename new_issue_m	ni_housem
 					
-					order year month t w_* r_* p_* q_* *_current *_prior acc_* ni_* 
-					drop *_prior *_current
-					
 					****************
-					** Look at net ablations over time
+					** Price accretion
 					****************	
-					sum year month t w_* r_* p_* q_* acc_* ni_* 
-					
+					gen acc_dem_price 				= 1
+					gen acc_sup_price				= 1
+										
+					order year month t w_* r_* p_* q_* *_current *_prior acc_* ni_* 
+					drop *_prior *_current			
 					
 				} //end if
 				di "Done with new issue."
-					
+
 				** Save monthly 
 				cd_nb_stage
 				save monthly_data, replace
@@ -1132,13 +1113,37 @@ program 			define 	NBProblem
 				cd_nb_stage
 				use annual_data, clear
 				
+				***************
+				** Analysis unit conversion
+				** ni_* are billions count (units)
+				** acc_* are billion dollars 
+				** p_* are dollars
+				** r_* are percentage points
+				** w_* is market cap in billions of dollars
+				***************
+				replace q_bond				= q_bond / 1000						// Billions of bonds ($1000 face value each) - trillions of dollars
+				replace ni_bondy			= ni_bondy / 1000					// Billions of bonds ($1000 face value each) - trillions of dollars
+								
+				****************
+				** Look at net accretions over time
+				****************	
+				drop acc_*m
+				drop ni_*m
+					sum year month t w_* r_* p_* q_* acc_* ni_* if year>=1948
+				
+				** Net accretions
+				gen net_sup_acc 				= acc_sup_bond + acc_sup_stock + acc_sup_house
+				gen net_dem_acc 				= acc_dem_bond + acc_dem_stock + acc_dem_house
+				gen net_acc						= net_sup_acc + net_dem_acc
+					sum year month t w_* r_* p_* q_* net_* acc_* ni_* //if year>=1948
+								
 				** TSSET
 				sort year
 				gen n 						= _n
 				tsset n
-										
+									
 				******************************
-				** N-Body - Special cases
+				** N-Body - Combined
 				** 1. Rocket
 				** 2. 3-Body
 				******************************
@@ -1156,9 +1161,9 @@ program 			define 	NBProblem
 							di "Primary velocity and accel: `pri'."
 							
 						******************
-						** NB variables
-						** 4.16.25 p.1
-						******************
+						** Variables
+						** 5.30.25
+						******************						
 						
 						** Velocity
 						gen v_`pri'				= r_`pri' - L.r_`pri' 
@@ -1173,44 +1178,12 @@ program 			define 	NBProblem
 						gen lag_j_`pri'			= L.j_`pri'
 						
 						** Mass
-						gen lag_w_`pri'			= L.w_`pri'
+						gen m_`pri'				= w_`pri'
+						gen lag_m_`pri'			= L.m_`pri'
 						
-						** Ablation
-						//gen ab_`pri'			= ni_`pri'
-							
-						******************
-						** Rocket variables
-						** 4.9.25 p.3
-						******************
-						
-						** Percent change in mass - ln (m1 / m0)
-						//gen mdot_`pri'			= ln(F1.w_`pri' / w_`pri')  // this is ln (m0 / m1)
-						//gen mdotinv_`pri'		= mdot_`pri' ^ (-1)			// this is ln (m1 / m0)
-						
-						** Lagged values for rocket
-						//gen lag_mdot_`pri'		= L.mdotinv_`pri'
-						
-						** Ejected velocity u - rocket
-						//gen u_`pri'				= mdot_`pri' * F1.a_`pri' + v_`pri'
-						
-						******************
-						** Rocket variables
-						** 4.16.25 p1
-						******************
-						
-						** Separate quantity change from price change here? -- at indu_* indicator 4.16.25
-						
-						** Percent change in mass - ln (m1 / m0)
-						** Assumes change in mass is mass ablation/accretion -- but only some of the mass is ablating, 
-						**   A portion is just disappearing (price change with no quantity change. Where does it go?
-						gen lnm_`pri'			= ln(w_`pri' / F1.w_`pri' )  // this is ln (m1 / m0)
-						gen fm_`pri'			= 1 - lnm_`pri' ^ (-1)			
-						gen fminv_`pri'			= fm_`pri' ^ (-1)			
-						gen int_`pri'			= lag_v_`pri' * fminv_`pri'
-											
-						** Ejected velocity u - rocket
-						gen u_`pri'				= F1.v_`pri' + a_`pri'  * fm_`pri'
-						gen indu_`pri'			= w_`pri' > F1.w_`pri'
+						** Accretion
+						gen acd_`pri'			= acc_dem_`pri'
+						gen acs_`pri'			= acc_sup_`pri'
 						
 						** Secondary
 						foreach sec of global nam  {
@@ -1218,8 +1191,7 @@ program 			define 	NBProblem
 								di "Starting primary: `pri' and secondary: `sec'."
 							
 							******************
-							** NB variables
-							** 4.16.25 p.1
+							** Secondary variables
 							******************
 							
 							** Distance
@@ -1233,17 +1205,6 @@ program 			define 	NBProblem
 							** Inververse normed distance
 							gen in_`sec'_`pri'				= 1/n_`sec'_`pri'
 							gen lag_in_`sec'_`pri'			= L.in_`sec'_`pri'
-
-							******************
-							** Rocket variables
-							** 4.9.25 p.3
-							******************
-
-							** Mass-distance
-							gen md_`pri'_`sec'				= w_`sec' * d_`sec'_`pri'
-										
-							** Linear term
-							gen c_`sec'_`pri'				= w_`sec' * d_`sec'_`pri' * in_`sec'_`pri'
 										
 						} //end loop
 						di "Done with seconary loop for primary: `pri'."
@@ -1254,14 +1215,10 @@ program 			define 	NBProblem
 					} //end loop
 					di "Done with relative distance loop."
 					
-					** Rename mass variables
-					rename w_* m_*
-					rename *_w_* *_m_*
-					
 					** Drop
 					drop r_priceR
 					drop m_price
-					drop *_price*
+					//drop *_price*
 										
 						** Order
 						order *, alpha
@@ -1271,6 +1228,8 @@ program 			define 	NBProblem
 					** Save
 					cd_nb_stage
 					save arima_data, replace
+					
+					asdf_arim
 				
 					////////////
 					** 1. Ideal rocket
@@ -1502,6 +1461,517 @@ program 			define 	NBProblem
 					di "Done with Merged."
 				
 				
+					////////////
+					** Add risk premium
+					////////////
+					scalar rocket = 1
+					if rocket == 1 {
+						
+						** Load
+						cd_nb_stage
+						use arima_data, clear
+							
+						** Derive risk premia
+						reg r_stock r_bond r_house 	if year >=1945, vce(robust)
+						reg r_stock r_bond 			if year >=1945, vce(robust)
+						reg r_stock r_house 		if year >=1945, vce(robust)
+						reg r_house r_stock r_bond 	if year >=1945, vce(robust)
+						reg r_house r_bond 			if year >=1945, vce(robust)
+						reg r_house r_stock 		if year >=1945, vce(robust)
+						reg r_bond r_stock r_house 	if year >=1945, vce(robust)
+						reg r_bond r_house 			if year >=1945, vce(robust)
+						reg r_bond r_stock 			if year >=1945, vce(robust)
+							
+						asdf_risk	
+							
+					} //end if
+					di "Done with risk."
+				
+				
+					////////////
+					** Bonds
+					////////////
+					scalar bon 				= 1
+					if bon == 1 {
+						
+						** Load
+						cd_nb_stage
+						use arima_data, clear
+							
+						** Nominal interest rate
+						//rename r_bond bond 
+						reg r_bond L.r_bond m_* d_*_bond in_*_bond , vce(robust) 
+						//reg r_bond L.r_bond c_*_bond , vce(robust) 
+						predict e_bond, xb
+						replace e_bond 				= bond - e_bond		//Convert to error
+						** Correlogram
+						ac  e_bond, ylabels(-.4(.2).6) name(ac_bond, replace)
+						//graph save ac_bond, replace
+						pac e_bond, ylabels(-.4(.2).6) name(pac_bond, replace)
+						//graph save pac_bond, replace
+						graph combine ac_bond pac_bond, rows(2) cols(1)
+						drop e_*
+						** ARIMA
+						arima r_bond L.r_bond m_* d_*_bond in_*_bond  , ar(2 4) ma(1 3) vce(robust)
+						estat aroots
+						rename bond r_bond
+						
+						** Acceleration interest rate
+						rename a_bond bond 
+						rename m_bond	mass_bond
+						//reg bond L.r_price L.m_* L.d_*_bond L.n_*_bond L.in_*_bond L.md_*_bond L.c_*_bond L.v_* L.a_* L.j_* 
+						reg bond L.c_*_bond //2nd law
+						reg bond L.m_* L.d_*_bond L.in_*_bond  //2nd law bits
+						//reg bond m_* d_*_bond in_*_bond  //2nd law bits
+						predict e_bond, xb
+						replace e_bond 				= bond - e_bond		//Convert to error
+						** Correlogram
+						ac  e_bond, ylabels(-.4(.2).6) name(ac_bond, replace)
+						//graph save ac_bond, replace
+						pac e_bond, ylabels(-.4(.2).6) name(pac_bond, replace)
+						//graph save pac_bond, replace
+						graph combine ac_bond pac_bond, rows(2) cols(1)
+						drop e_*
+						** ARIMA
+						//arima bond L.m_* L.d_*_bond L.in_*_bond, ar(1 15) ma(12)  //real bon
+						arima bond L.m_* L.d_*_bond L.in_*_bond, ar(1) ma(4)
+						estat aroots
+						rename bond a_bond
+						rename mass_bond m_bond
+					
+					} //end if
+					di "Done with bonds NB."
+						
+						
+						
+						
+						
+					////////////
+					** Stock
+					////////////
+					scalar stoc 			= 1
+					if stoc == 1 {
+													
+						** Stock acceleration
+						rename a_stock stock 
+						//reg stock L.m_* L.d_*_stock L.n_*_stock L.in_*_stock L.md_*_stock L.c_*_stock L.r_* L.v_* L.a_* L.j_*
+						reg stock L.c_*_stock //2nd law
+						reg stock L.m_* L.d_*_stock L.in_*_stock  //2nd law bits
+						predict e_stock, xb
+						replace e_stock 				= stock - e_stock		//Convert to error
+						** Correlogram
+						ac  e_stock, ylabels(-.4(.2).6) name(ac_stock, replace)
+						//graph save ac_stock, replace
+						pac e_stock, ylabels(-.4(.2).6) name(pac_stock, replace)
+						//graph save pac_stock, replace
+						graph combine ac_stock pac_stock, rows(2) cols(1)
+						drop e_*
+						** ARIMA
+						//arima stock L.m_* L.d_*_stock L.in_*_stock, ar(1 3) ma(4) //2nd law bits
+						arima stock L.c_*_stock, ar(1) ma() 
+						estat aroots
+						rename stock a_stock
+																				
+					} //end if
+					di "Done with stock NB."
+					
+					////////////
+					** House
+					////////////
+					scalar hous 				= 1
+					if hous == 1 {
+											
+						** House acceleration
+						rename a_house house 
+						rename m_house mass_house
+						//reg house L.m_* L.d_*_house L.n_*_house L.in_*_house L.md_*_house L.c_*_house L.r_house L.v_* L.a_* L.j_*
+						//reg house L.c_*_house //2nd law
+						reg house L.m_* L.d_*_house L.in_*_house //2nd law bits
+						predict e_house, xb
+						replace e_house 				= house - e_house		//Convert to error
+						** Correlogram
+						ac  e_house, ylabels(-.4(.2).6) name(ac_house, replace)
+						//graph save ac_bond, replace
+						pac e_house, ylabels(-.4(.2).6) name(pac_house, replace)
+						//graph save pac_bond, replace
+						graph combine ac_house pac_house, rows(2) cols(1)
+						drop e_*
+						** ARIMA
+						arima house L.m_* L.d_*_house L.in_*_house, ar(1 2 6) ma() 
+						estat aroots
+						rename house a_house
+						rename mass_house m_house
+									
+					} //end if
+					di "Done with house NB."
+					
+				} //end if
+				di "Done with NB combined."	
+					
+				******************************
+				** N-Body - Special cases - archive
+				** 1. Rocket
+				** 2. 3-Body
+				******************************
+				scalar nb 					= 1111
+				if nb == 1 {
+				
+					**************************
+					** Prep Relative distances
+					**************************
+					global nam "stock bond house price"
+					** Stats loop
+					** Primary
+					foreach pri of global nam {
+
+							di "Primary velocity and accel: `pri'."
+							
+						******************
+						** NB variables
+						** 4.16.25 p.1
+						******************
+						
+						** Velocity
+						gen v_`pri'				= r_`pri' - L.r_`pri' 
+						gen lag_v_`pri'			= L.v_`pri'
+						
+						** Acceleration
+						gen a_`pri'				= v_`pri' - L.v_`pri' 
+						gen lag_a_`pri'			= L.a_`pri'
+						
+						** Jolt (Jerk)
+						gen j_`pri'				= a_`pri' - L.a_`pri' 
+						gen lag_j_`pri'			= L.j_`pri'
+						
+						** Mass
+						gen lag_w_`pri'			= L.w_`pri'
+						
+						** Ablation
+						//gen ab_`pri'			= ni_`pri'
+							
+						******************
+						** Rocket variables
+						** 4.9.25 p.3
+						******************
+						
+						** Percent change in mass - ln (m1 / m0)
+						//gen mdot_`pri'			= ln(F1.w_`pri' / w_`pri')  // this is ln (m0 / m1)
+						//gen mdotinv_`pri'		= mdot_`pri' ^ (-1)			// this is ln (m1 / m0)
+						
+						** Lagged values for rocket
+						//gen lag_mdot_`pri'		= L.mdotinv_`pri'
+						
+						** Ejected velocity u - rocket
+						//gen u_`pri'				= mdot_`pri' * F1.a_`pri' + v_`pri'
+						
+						******************
+						** Rocket variables
+						** 4.16.25 p1
+						******************
+						
+						** Separate quantity change from price change here? -- at indu_* indicator 4.16.25
+						
+						** Percent change in mass - ln (m1 / m0)
+						** Assumes change in mass is mass ablation/accretion -- but only some of the mass is ablating, 
+						**   A portion is just disappearing (price change with no quantity change. Where does it go?
+						gen lnm_`pri'			= ln(w_`pri' / F1.w_`pri' )  // this is ln (m1 / m0)
+						gen fm_`pri'			= 1 - lnm_`pri' ^ (-1)			
+						gen fminv_`pri'			= fm_`pri' ^ (-1)			
+						gen int_`pri'			= lag_v_`pri' * fminv_`pri'
+											
+						** Ejected velocity u - rocket
+						gen u_`pri'				= F1.v_`pri' + a_`pri'  * fm_`pri'
+						gen indu_`pri'			= w_`pri' > F1.w_`pri'
+						
+						** Secondary
+						foreach sec of global nam  {
+							
+								di "Starting primary: `pri' and secondary: `sec'."
+							
+							******************
+							** NB variables
+							** 4.16.25 p.1
+							******************
+							
+							** Distance
+							gen d_`sec'_`pri'				= r_`sec' - r_`pri' 
+							gen lag_d_`sec'_`pri'			= L.d_`sec'_`pri'
+														
+							** Normed distance
+							gen n_`sec'_`pri'				= abs(d_`sec'_`pri')^3
+							gen lag_n_`sec'_`pri'			= L.n_`sec'_`pri'
+							
+							** Inververse normed distance
+							gen in_`sec'_`pri'				= 1/n_`sec'_`pri'
+							gen lag_in_`sec'_`pri'			= L.in_`sec'_`pri'
+
+							******************
+							** Rocket variables
+							** 4.9.25 p.3
+							******************
+
+							** Mass-distance
+							gen md_`pri'_`sec'				= w_`sec' * d_`sec'_`pri'
+										
+							** Linear term
+							gen c_`sec'_`pri'				= w_`sec' * d_`sec'_`pri' * in_`sec'_`pri'
+										
+						} //end loop
+						di "Done with seconary loop for primary: `pri'."
+						
+						** Delete diagonal elements
+						drop *_`pri'_`pri'
+						
+					} //end loop
+					di "Done with relative distance loop."
+					
+					** Rename mass variables
+					rename w_* m_*
+					rename *_w_* *_m_*
+					
+					** Drop
+					drop r_priceR
+					drop m_price
+					drop *_price*
+										
+						** Order
+						order *, alpha
+						order *stock* *bond* *house* *price*
+						order n t year month dt period r_* v_* a_* j_* m_* d_* n_* in_* lag_*
+				
+					** Save
+					cd_nb_stage
+					save arima_data, replace
+									
+					////////////
+					** General Rocket + Gravity
+					////////////
+					scalar rocket = 1
+					if rocket == 1 {
+						
+						** Load
+						cd_nb_stage
+						use arima_data, clear
+							
+							
+							
+							
+							
+							
+							
+							
+							
+							
+							
+							
+							
+							
+							
+							
+							
+							
+							
+						asdf_combined
+							
+					} //end if
+					di "Done with Merged."
+				
+					////////////
+					** 1. Ideal rocket
+					////////////
+					scalar rocket = 1
+					if rocket == 1 {
+						
+						** Load
+						cd_nb_stage
+						use arima_data, clear
+							
+						** Need welfare decomposition of price (valuation) and quanity effects here
+						
+						** Unconditional estimates of ejected mass average velocity
+						** Market price of risk Lambda ~= 0.20: 0.2 percent higher per standard deviation volatility - holds for all three approximately
+						sum u_* r_* v_* rr_* year if year 
+						sum u_* r_* rr_* year if year >= 1945 
+						sum u_* r_* rr_* year if year >= 1981 
+							
+						** Estimate "u" 
+						** If u_hat is positive, velocity interaction term == negative 1 -- ablating, switching signs -- accreting 
+						** (4.9.25 p.3) estimate of average velocity of the ejected mass
+						** Conditional estimates of mean ejected velocity
+						** Here, the first coefficient b1 is "u" (4.9.25 p.3) estimate of velocity of the ejected mass
+						** Updated to 4.16.25 p1 -- inverse of the fM variable less interaction term int_
+						** Post 1981
+						reg a_stock fminv_stock	int_stock	if year>1981, vce(robust)  
+						reg a_bond  fminv_bond 	int_bond	if year>1981, vce(robust)  
+						reg a_house fminv_house int_house	if year>1981, vce(robust)  
+					
+						reg a_house indu_house#c.fminv_house int_house	if year>1981, vce(robust)  
+					
+						** Acceleration a - house
+						reg a_house fminv_house indu_house int_house, vce(robust) 
+						reg a_house fminv_house indu_house int_house
+						predict e_house, xb
+						replace e_house 				= r_house - e_house		//Convert to error
+						** Correlogram
+						ac  e_house, ylabels(-.4(.2).6) name(ac_house, replace)
+						//graph save ac_house, replace
+						pac e_house, ylabels(-.4(.2).6) name(pac_house, replace)
+						//graph save pac_house, replace
+						graph combine ac_house pac_house, rows(2) cols(1)
+						drop e_*
+						** ARIMA
+						arima a_house fminv_house indu_house int_house, ar(1 2) ma() 
+						estat aroots
+						
+					} //end if
+					di "Done with perfect rocket."
+					
+					////////////
+					** 1.1 Rocket - Mass transfer
+					////////////
+					scalar rocket = 1
+					if rocket == 1 {
+						
+						** Load
+						cd_nb_stage
+						use arima_data, clear
+							
+						** Need welfare decomposition of price (valuation) and quanity effects here
+						
+						
+						
+						omojmnlklkk
+							
+						** Estimate "u" 
+						** If u_hat is positive, velocity interaction term == negative 1 -- ablating, switching signs -- accreting 
+						** (4.9.25 p.3) estimate of average velocity of the ejected mass
+						** Conditional estimates of mean ejected velocity
+						** Here, the first coefficient b1 is "u" (4.9.25 p.3) estimate of velocity of the ejected mass
+						** Updated to 4.16.25 p1 -- inverse of the fM variable less interaction term int_
+						** Post 1981
+						reg a_stock fminv_stock	int_stock	if year>1981, vce(robust)  
+						reg a_bond  fminv_bond 	int_bond	if year>1981, vce(robust)  
+						reg a_house fminv_house int_house	if year>1981, vce(robust)  
+					
+						reg a_house indu_house#c.fminv_house int_house	if year>1981, vce(robust)  
+					
+						** Acceleration a - house
+						reg a_house fminv_house indu_house int_house, vce(robust) 
+						reg a_house fminv_house indu_house int_house
+						predict e_house, xb
+						replace e_house 				= r_house - e_house		//Convert to error
+						** Correlogram
+						ac  e_house, ylabels(-.4(.2).6) name(ac_house, replace)
+						//graph save ac_house, replace
+						pac e_house, ylabels(-.4(.2).6) name(pac_house, replace)
+						//graph save pac_house, replace
+						graph combine ac_house pac_house, rows(2) cols(1)
+						drop e_*
+						** ARIMA
+						arima a_house fminv_house indu_house int_house, ar(1 2) ma() 
+						estat aroots
+						
+					} //end if
+					di "Done with transfer rocket."
+								
+					////////////
+					** 3-body - motion
+					////////////
+					scalar threeb = 1
+					if threeb == 1 {
+						
+						** Load
+						cd_nb_stage
+						use arima_data, clear
+							
+						** Market price of risk Lambda ~= 0.20: 0.2 percent higher per standard deviation volatility - holds for all three approximately
+						sum u_* r_* rr_* year if year >= 1890 
+						sum u_* r_* rr_* year if year >= 1945 
+							
+						** Position r - stock  = AR(2) process by 3-body theory
+						reg r_stock lag_m_bond lag_m_house lag_d_*_stock lag_in_*_stock L.r_stock L2.r_stock, vce(robust) //excludes lags
+						reg r_stock lag_m_bond lag_m_house lag_d_*_stock lag_in_*_stock //excludes lags
+						predict e_stock, xb
+						replace e_stock 				= r_stock - e_stock		//Convert to error
+						** Correlogram
+						ac  e_stock, ylabels(-.4(.2).6) name(ac_stock, replace)
+						//graph save ac_stock, replace
+						pac e_stock, ylabels(-.4(.2).6) name(pac_stock, replace)
+						//graph save pac_stock, replace
+						graph combine ac_stock pac_stock, rows(2) cols(1)
+						drop e_*
+						** ARIMA
+						arima r_stock lag_m_bond lag_m_house lag_d_*_stock lag_in_*_stock, ar(1 2) ma() 
+						estat aroots
+						
+						** Position r - house = AR(2) process by 3-body theory
+						reg r_house lag_m_bond lag_m_stock lag_d_*_house lag_in_*_house L.r_house L2.r_house, vce(robust) //excludes lags
+						reg r_house lag_m_bond lag_m_stock lag_d_*_house lag_in_*_house //excludes lags
+						predict e_house, xb
+						replace e_house 				= r_house - e_house		//Convert to error
+						** Correlogram
+						ac  e_house, ylabels(-.4(.2).6) name(ac_house, replace)
+						//graph save ac_house, replace
+						pac e_house, ylabels(-.4(.2).6) name(pac_house, replace)
+						//graph save pac_house, replace
+						graph combine ac_house pac_house, rows(2) cols(1)
+						drop e_*
+						** ARIMA
+						arima r_house lag_m_bond lag_m_stock lag_d_*_house lag_in_*_house, ar(1 2) ma() 
+						estat aroots
+						
+						** Velocity v - house = AR(1) process by 3-body theory
+						reg v_house lag_m_bond lag_m_stock lag_d_*_house lag_in_*_house L.v_house, vce(robust) //look at flexible
+						reg v_house lag_m_bond lag_m_stock lag_d_*_house lag_in_*_house //excludes lags - reg for correlogram
+						predict e_house, xb
+						replace e_house 				= r_house - e_house		//Convert to error
+						** Correlogram
+						ac  e_house, ylabels(-.4(.2).6) name(ac_house, replace)
+						//graph save ac_house, replace
+						pac e_house, ylabels(-.4(.2).6) name(pac_house, replace)
+						//graph save pac_house, replace
+						graph combine ac_house pac_house, rows(2) cols(1)
+						drop e_*
+						** ARIMA
+						arima v_house lag_m_bond lag_m_stock lag_d_*_house lag_in_*_house, ar(1) ma() 					
+						estat aroots
+						
+						** Acceleration a - house = AR(0) process by 3-body theory
+						reg a_house c.lag_m_stock#c.lag_d_stock_house#c.lag_in_stock_house c.lag_m_bond#c.lag_d_bond_house#c.lag_in_bond_house , vce(robust) //excludes lags
+						reg a_house lag_m_bond lag_m_stock lag_d_*_house lag_in_*_house //excludes lags
+						predict e_house, xb
+						replace e_house 				= r_house - e_house		//Convert to error
+						** Correlogram
+						ac  e_house, ylabels(-.4(.2).6) name(ac_house, replace)
+						//graph save ac_house, replace
+						pac e_house, ylabels(-.4(.2).6) name(pac_house, replace)
+						//graph save pac_house, replace
+						graph combine ac_house pac_house, rows(2) cols(1)
+						drop e_*
+						** ARIMA
+						arima a_house lag_m_bond lag_m_stock lag_d_*_house lag_in_*_house, ar(1) ma() 
+						arima a_house lag_m_bond lag_m_stock lag_d_*_house lag_in_*_house, ar() ma(1) 
+						estat aroots
+						
+						** Jolt j - house = AR(0) process by 3-body theory
+						reg j_house lag_m_bond lag_m_stock lag_d_*_house lag_in_*_house L.lag_m_bond L.lag_m_stock L.lag_d_stock_house L.lag_in_bond_house , vce(robust) //excludes lags
+						reg j_house lag_m_bond lag_m_stock lag_d_*_house lag_in_*_house //excludes lags
+						predict e_house, xb
+						replace e_house 				= r_house - e_house		//Convert to error
+						** Correlogram
+						ac  e_house, ylabels(-.4(.2).6) name(ac_house, replace)
+						//graph save ac_house, replace
+						pac e_house, ylabels(-.4(.2).6) name(pac_house, replace)
+						//graph save pac_house, replace
+						graph combine ac_house pac_house, rows(2) cols(1)
+						drop e_*
+						** ARIMA
+						arima j_house lag_m_bond lag_m_stock lag_d_*_house lag_in_*_house, ar(1 2) ma() 
+						estat aroots
+						
+					} //end if
+					di "Done with 3-body."
+									
 					////////////
 					** Add risk premium
 					////////////
