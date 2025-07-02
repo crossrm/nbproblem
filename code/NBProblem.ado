@@ -899,8 +899,8 @@ program 			define 	NBProblem
 			***************
 			** Save annual and monthly
 			***************
-			scalar ann = 1
-			if ann == 1 {
+			scalar annual = 1
+			if annual == 1 {
 				
 				** Load main 
 				clear all
@@ -965,7 +965,7 @@ program 			define 	NBProblem
 					** Generate quantities
 					rename house_units q_house	
 					replace q_house 			= q_house / 1000 /1000 			//Billions of units (houses)
-					gen q_stock					= w_stock / p_stock				//billions of shares
+					gen q_stock					= w_stock / p_stock				//billions of (effective) shares
 														
 					****************
 					** Bond accretion
@@ -1008,7 +1008,7 @@ program 			define 	NBProblem
 					gen acc_sup_bond			= new_issue * (p_current + p_prior) / 2 				//billions of dollars - millions of bonds ($1000 face value)				
 					** Use new issue (q' - q) from line 979 above, but reverse sign (q' + q)
 					** Correct 5.29.25 expressed in millions of dollars. 	
-					gen acc_dem_bond			= (p_current - p_prior) * (q_bond + v_current) / 2 		// $0.584 x 3460 bonds (in millions of bonds (billions of dollars)) -
+					gen acc_dem_bond			= (p_current - p_prior) * (q_bond + v_current) / 2 		// $0.584 x 3460 bonds (in millions of bonds (billions of dollars)) 
 					
 					** Gen new_issue (monthly rate)
 					//gen new_issue_m				= new_issue / 12											//millions of bonds - $1000 face value each - current month
@@ -1063,7 +1063,7 @@ program 			define 	NBProblem
 					sort t
 					tsset t
 					gen p_prior					= L12.p_house				// Dollars
-					gen q_prior					= L12.q_house				// Billions of units (houses)
+					gen q_prior					= L12.q_house				// Billions of units (houses) [millions 7.1.25]
 					gen new_issue				= q_house - q_prior 		//directly calculable by S&P share-weighting
 					gen new_issue_m				= (q_house - L.q_house)					
 					** Decompose accretion - Notes 5.16.25 p.2 
@@ -1104,10 +1104,10 @@ program 			define 	NBProblem
 			di "Done with save annual and monthly."
 			
 			**********************************************
-			** Annual 
+			** Analysis
 			**********************************************
-			scalar ann = 1
-			if ann == 1 {
+			scalar ans = 1
+			if ans == 1 {
 							
 				** Reload
 				cd_nb_stage
@@ -1129,13 +1129,24 @@ program 			define 	NBProblem
 				****************	
 				drop acc_*m
 				drop ni_*m
+				
 					sum year month t w_* r_* p_* q_* acc_* ni_* if year>=1948
 				
 				** Net accretions
 				gen net_sup_acc 				= acc_sup_bond + acc_sup_stock + acc_sup_house
 				gen net_dem_acc 				= acc_dem_bond + acc_dem_stock + acc_dem_house
 				gen net_acc						= net_sup_acc + net_dem_acc
-					sum year month t w_* r_* p_* q_* net_* acc_* ni_* //if year>=1948
+				
+				** Per capita -- $ per person -- ( pop is in 000s , dollar figures are in billions)
+				foreach var of varlist net_* acc_* w_* {
+					
+					gen cap_`var'			= `var' / (pop * 1000) * 1000000 
+					
+				} //end loop
+				di "Done with per cap vars."
+				
+				** Summary stats	
+				sum year month t pop w_* r_* p_* q_* net_* acc_* cap_* ni_* if year>=1981
 								
 				** TSSET
 				sort year
@@ -1185,13 +1196,44 @@ program 			define 	NBProblem
 						gen acd_`pri'			= acc_dem_`pri'
 						gen acs_`pri'			= acc_sup_`pri'
 						
-						** Secondary
+						** Mass difference and ratio
+						** Acceleration
+						gen m_diff_`pri'		= lag_m_`pri' - m_`pri'	
+						gen m_dot_`pri'			= 1 + m_diff_`pri' /  m_`pri'
+						** Velocity -- 7.1.25
+						gen m_dot2_`pri'		= 1 + 2 * m_diff_`pri' /  m_`pri'
+						** Rate -- added 7.1.25
+						gen lag_r_`pri'			= L.r_`pri'
+						gen lag2_r_`pri'		= L2.r_`pri'
+						gen m_dot3_`pri'		= m_dot_`pri'	 / m_dot2_`pri'	
+						gen m_dot3plus_`pri'	= 1 + m_dot3_`pri'	
+
+						** Composit mass terms for regression
+						** Acceleration
+						gen acc_ddot_`pri'		= acd_`pri' / m_`pri' / m_dot_`pri'						//added mass divisor 7.1.25
+						gen acc_sdot_`pri'		= acs_`pri' / m_`pri' / m_dot_`pri'						//added mass divisor 7.1.25
+						gen lag_v_dot_`pri'		= lag_v_`pri' * m_diff_`pri' / m_`pri' / m_dot_`pri'	//added mass divisor 7.1.25
+						gen v_dot_`pri'			= v_`pri' * m_diff_`pri' / m_`pri' / m_dot_`pri'		//added mass divisor 7.1.25
+						** Velocity -- added 7.1.25
+						gen acc_ddot2_`pri'		= acd_`pri' / m_`pri' / m_dot2_`pri'					//added mass divisor 7.1.25
+						gen acc_sdot2_`pri'		= acs_`pri' / m_`pri' / m_dot2_`pri'					//added mass divisor 7.1.25
+						gen lag_v_dot2_`pri'	= lag_v_`pri' * m_diff_`pri' / m_`pri' / m_dot2_`pri'	//added mass divisor 7.1.25
+						** Rate -- added 7.1.25
+						gen lag_r_dot_`pri'		= lag_r_`pri' * m_dot3plus_`pri'
+						gen lag2_r_dot_`pri'	= lag2_r_`pri' * m_dot3_`pri'
+												
+					} //end loop
+					di "Done with relative distance loop."
+					
+					foreach pri of global nam {
+
+						** Secondary terms
 						foreach sec of global nam  {
 							
-								di "Starting primary: `pri' and secondary: `sec'."
+								di "Starting primary: `pri' and secondary: `sec' section."
 							
 							******************
-							** Secondary variables
+							** Two-asset Secondary variables
 							******************
 							
 							** Distance
@@ -1202,19 +1244,21 @@ program 			define 	NBProblem
 							gen n_`sec'_`pri'				= abs(d_`sec'_`pri')^3
 							gen lag_n_`sec'_`pri'			= L.n_`sec'_`pri'
 							
-							** Inververse normed distance
-							gen in_`sec'_`pri'				= 1/n_`sec'_`pri'
-							gen lag_in_`sec'_`pri'			= L.in_`sec'_`pri'
-										
+							** Grav terms for regression
+							** Acceleration
+							gen grav_term_`sec'_`pri'			= lag_m_`sec' / m_dot_`pri' * lag_d_`sec'_`pri' / lag_n_`sec'_`pri'
+							** Velocity
+							gen grav_term2_`sec'_`pri'			= lag_m_`sec' / m_dot2_`pri' * lag_d_`sec'_`pri' / lag_n_`sec'_`pri'
+														
 						} //end loop
-						di "Done with seconary loop for primary: `pri'."
+						di "Done with seconary loop for primary: `pri' and sec: `sec'."
 						
 						** Delete diagonal elements
 						drop *_`pri'_`pri'
 						
 					} //end loop
-					di "Done with relative distance loop."
-					
+					di "Done with primary loop: `pri'."
+										
 					** Drop
 					drop r_priceR
 					drop m_price
@@ -1223,18 +1267,368 @@ program 			define 	NBProblem
 						** Order
 						order *, alpha
 						order *stock* *bond* *house* *price*
-						order n t year month dt period r_* v_* a_* j_* m_* lnm* fm* fminv* int_* u_* indu_* d_* n_* in_* c_* lag_*
-				
+						order n t year month dt period r_* v_* a_* j_* m_* acc_* d_* n_* grav_* lag_*
+						
 					** Save
 					cd_nb_stage
 					save arima_data, replace
-					
-					asdf_arim
+														
+					////////////
+					** Acceleration
+					** General rocket + gravity
+					////////////
+					scalar gen_accel = 1111
+					if gen_accel == 1 {
+						
+						** Load
+						cd_nb_stage
+						use arima_data, clear
+												
+						***********
+						** House
+						***********
+						
+						** Initial reg
+						reg a_house grav_term_stock_house grav_term_bond_house  ///
+							acc_ddot_house acc_sdot_house lag_v_dot_house if year >= 1981
+							
+						** Initial arima
+						predict e_house, xb
+						replace e_house 				= a_house - e_house		//Convert to error
+						** Correlogram
+						ac  e_house, ylabels(-.4(.2).6) name(ac_house, replace)
+						//graph save ac_house, replace
+						pac e_house, ylabels(-.4(.2).6) name(pac_house, replace)
+						//graph save pac_house, replace
+						graph combine ac_house pac_house, rows(2) cols(1)
+						drop e_*
+						
+						** ARIMA
+						arima a_house grav_term_stock_house grav_term_bond_house  ///
+							acc_ddot_house acc_sdot_house lag_v_dot_house if year >= 1981, ar(1) ma() 
+						estat aroots	
+						arima a_house grav_term_stock_house grav_term_bond_house  ///
+							acc_ddot_house acc_sdot_house lag_v_dot_house if year >= 1981, ar() ma(1) 
+						estat aroots	
+						arima a_house grav_term_stock_house grav_term_bond_house  ///
+						acc_ddot_house acc_sdot_house lag_v_dot_house if year >= 1981, ar(1) ma(1) 
+						estat aroots	
+						
+						** Net v_dot term
+						gen net_a_house			= a_house - 4.4 * v_dot_house
+						reg net_a_house grav_term_stock_house grav_term_bond_house  ///
+							acc_ddot_house acc_sdot_house if year >= 1981
+							
+						** Initial arima
+						predict e_house, xb
+						replace e_house 				= a_house - e_house		//Convert to error
+						** Correlogram
+						ac  e_house, ylabels(-.4(.2).6) name(ac_house, replace)
+						//graph save ac_house, replace
+						pac e_house, ylabels(-.4(.2).6) name(pac_house, replace)
+						//graph save pac_house, replace
+						graph combine ac_house pac_house, rows(2) cols(1)
+						drop e_*	
+							
+						** ARIMA
+						arima net_a_house grav_term_stock_house grav_term_bond_house  ///
+							acc_ddot_house acc_sdot_house if year >= 1981, ar(1) ma() 
+						estat aroots	
+																											
+						***********
+						** Stock
+						***********
+						
+						** Initial reg
+						reg a_stock grav_term_bond_stock grav_term_house_stock  ///
+							acc_ddot_stock acc_sdot_stock lag_v_dot_stock if year >= 1981
+							
+						** Initial arima
+						predict e_stock, xb
+						replace e_stock 				= a_stock - e_stock		//Convert to error
+						** Correlogram
+						ac  e_stock, ylabels(-.4(.2).6) name(ac_stock, replace)
+						//graph save ac_stock, replace
+						pac e_stock, ylabels(-.4(.2).6) name(pac_stock, replace)
+						//graph save pac_stock, replace
+						graph combine ac_stock pac_stock, rows(2) cols(1)
+						drop e_*
+						
+						** ARIMA
+						arima a_stock grav_term_bond_stock grav_term_house_stock  ///
+							acc_ddot_stock acc_sdot_stock lag_v_dot_stock if year >= 1981, ar(1) ma() 
+						estat aroots	
+						
+						** Net v_dot term
+						gen net_a_stock			= a_stock - 4.0 * v_dot_stock
+						reg net_a_stock grav_term_bond_stock grav_term_house_stock  ///
+							acc_ddot_stock acc_sdot_stock if year >= 1981
+						
+						** Initial arima
+						predict e_stock, xb
+						replace e_stock 				= a_stock - e_stock		//Convert to error
+						** Correlogram
+						ac  e_stock, ylabels(-.4(.2).6) name(ac_stock, replace)
+						//graph save ac_stock, replace
+						pac e_stock, ylabels(-.4(.2).6) name(pac_stock, replace)
+						//graph save pac_stock, replace
+						graph combine ac_stock pac_stock, rows(2) cols(1)
+						drop e_*
+						
+						** ARIMA
+						arima net_a_stock grav_term_bond_stock grav_term_house_stock  ///
+							acc_ddot_stock acc_sdot_stock if year >= 1981, ar(1) ma() 
+						estat aroots	
+											
+						***********
+						** Bond
+						***********
+													
+						** Initial reg
+						reg a_bond grav_term_stock_bond grav_term_house_bond  ///
+							acc_ddot_bond acc_sdot_bond lag_v_dot_bond if year >= 1981
+							
+						** Initial arima
+						predict e_bond, xb
+						replace e_bond 				= a_bond - e_bond		//Convert to error
+						** Correlogram
+						ac  e_bond, ylabels(-.4(.2).6) name(ac_bond, replace)
+						//graph save ac_bond, replace
+						pac e_bond, ylabels(-.4(.2).6) name(pac_bond, replace)
+						//graph save pac_bond, replace
+						graph combine ac_bond pac_bond, rows(2) cols(1)
+						drop e_*
+						
+						** ARIMA
+						arima a_bond grav_term_stock_bond grav_term_house_bond  ///
+							acc_ddot_bond acc_sdot_bond lag_v_dot_bond if year >= 1981, ar(1) ma() 
+						estat aroots	
+						arima a_bond grav_term_stock_bond grav_term_house_bond  ///
+							acc_ddot_bond acc_sdot_bond lag_v_dot_bond if year >= 1981, ar() ma(1) 
+						estat aroots	
+						
+						** Net v_dot term
+						gen net_a_bond			= a_bond - 7.2 * v_dot_bond
+						reg net_a_bond grav_term_stock_bond grav_term_house_bond  ///
+							acc_ddot_bond acc_sdot_bond if year >= 1981
+							
+						** Initial arima
+						predict e_bond, xb
+						replace e_bond 				= a_bond - e_bond		//Convert to error
+						** Correlogram
+						ac  e_bond, ylabels(-.4(.2).6) name(ac_bond, replace)
+						//graph save ac_bond, replace
+						pac e_bond, ylabels(-.4(.2).6) name(pac_bond, replace)
+						//graph save pac_bond, replace
+						graph combine ac_bond pac_bond, rows(2) cols(1)
+						drop e_*
+							
+						** ARIMA
+						arima net_a_bond grav_term_stock_bond grav_term_house_bond  ///
+							acc_ddot_bond acc_sdot_bond if year >= 1981, ar(1) ma() 
+						estat aroots	
+						arima net_a_bond grav_term_stock_bond grav_term_house_bond  ///
+							acc_ddot_bond acc_sdot_bond if year >= 1981, ar() ma(1) 
+						estat aroots		
+						arima net_a_bond grav_term_stock_bond grav_term_house_bond  ///
+						acc_ddot_bond acc_sdot_bond if year >= 1981, ar(1) ma(2) 
+						estat aroots		
+
+					} //end if
+					di "Done with Acceleration."
+				
+					////////////
+					** Velocity
+					** General rocket + gravity
+					////////////
+					scalar gen_vel = 1111
+					if gen_vel == 1 {
+						
+						** Load
+						cd_nb_stage
+						use arima_data, clear
+													
+						***********
+						** House
+						***********
+						
+						** Initial reg
+						reg v_house grav_term2_stock_house grav_term2_bond_house  ///
+							acc_ddot2_house acc_sdot2_house lag_v_dot2_house if year >= 1981
+							
+						** Initial arima
+						predict e_house, xb
+						replace e_house 				= a_house - e_house		//Convert to error
+						** Correlogram
+						ac  e_house, ylabels(-.4(.2).6) name(ac_house, replace)
+						//graph save ac_house, replace
+						pac e_house, ylabels(-.4(.2).6) name(pac_house, replace)
+						//graph save pac_house, replace
+						graph combine ac_house pac_house, rows(2) cols(1)
+						drop e_*
+						
+						** ARIMA
+						arima v_house grav_term2_stock_house grav_term2_bond_house  ///
+							acc_ddot2_house acc_sdot2_house lag_v_dot2_house if year >= 1981, ar(1) ma() 
+						estat aroots	
+																
+						***********
+						** Stock
+						***********
+						
+						** Initial reg
+						reg v_stock grav_term2_bond_stock grav_term2_house_stock  ///
+							acc_ddot2_stock acc_sdot2_stock lag_v_dot2_stock if year >= 1981
+							
+						** Initial arima
+						predict e_stock, xb
+						replace e_stock 				= v_stock - e_stock		//Convert to error
+						** Correlogram
+						ac  e_stock, ylabels(-.4(.2).6) name(ac_stock, replace)
+						//graph save ac_stock, replace
+						pac e_stock, ylabels(-.4(.2).6) name(pac_stock, replace)
+						//graph save pac_stock, replace
+						graph combine ac_stock pac_stock, rows(2) cols(1)
+						drop e_*
+						
+						** ARIMA
+						arima v_stock grav_term2_bond_stock grav_term2_house_stock  ///
+							acc_ddot2_stock acc_sdot2_stock lag_v_dot2_stock if year >= 1981, ar(2) ma() 
+						estat aroots	
+						arima v_stock grav_term2_bond_stock grav_term2_house_stock  ///
+							acc_ddot2_stock acc_sdot2_stock lag_v_dot2_stock if year >= 1981, ar() ma(2) 
+						estat aroots	
+																							
+						***********
+						** Bond
+						***********
+													
+						** Initial reg
+						reg v_bond grav_term2_stock_bond grav_term2_house_bond  ///
+							acc_ddot2_bond acc_sdot2_bond lag_v_dot2_bond if year >= 1981
+							
+						** Initial arima
+						predict e_bond, xb
+						replace e_bond 				= v_bond - e_bond		//Convert to error
+						** Correlogram
+						ac  e_bond, ylabels(-.4(.2).6) name(ac_bond, replace)
+						//graph save ac_bond, replace
+						pac e_bond, ylabels(-.4(.2).6) name(pac_bond, replace)
+						//graph save pac_bond, replace
+						graph combine ac_bond pac_bond, rows(2) cols(1)
+						drop e_*
+						
+						** ARIMA
+						arima v_bond grav_term2_stock_bond grav_term2_house_bond  ///
+							acc_ddot2_bond acc_sdot2_bond lag_v_dot2_bond if year >= 1981, ar() ma(1) 
+						estat aroots	
+						
+					} //end if
+					di "Done with Velocity."
+				
+					////////////
+					** Rate r
+					** General rocket + gravity
+					////////////
+					scalar gen_rate = 1
+					if gen_rate == 1 {
+						
+						** Load
+						cd_nb_stage
+						use arima_data, clear
+													
+						***********
+						** House
+						***********
+						
+						** Initial reg
+						reg r_house grav_term2_stock_house grav_term2_bond_house  ///
+							acc_ddot2_house acc_sdot2_house lag_r_dot_house lag2_r_dot_house if year >= 1981
+							
+						** Initial arima
+						predict e_house, xb
+						replace e_house 				= a_house - e_house		//Convert to error
+						** Correlogram
+						ac  e_house, ylabels(-.4(.2).6) name(ac_house, replace)
+						//graph save ac_house, replace
+						pac e_house, ylabels(-.4(.2).6) name(pac_house, replace)
+						//graph save pac_house, replace
+						graph combine ac_house pac_house, rows(2) cols(1)
+						drop e_*
+						
+						** ARIMA
+						arima r_house grav_term2_stock_house grav_term2_bond_house  ///
+							acc_ddot2_house acc_sdot2_house lag_r_dot_house lag2_r_dot_house if year >= 1981, ar(2) ma() 
+						estat aroots	
+						arima r_house grav_term2_stock_house grav_term2_bond_house  ///
+							acc_ddot2_house acc_sdot2_house lag_r_dot_house lag2_r_dot_house if year >= 1981, ar() ma(1) 
+						estat aroots	
+																
+						***********
+						** Stock
+						***********
+						
+						** Initial reg
+						reg r_stock grav_term2_bond_stock grav_term2_house_stock  ///
+							acc_ddot2_stock acc_sdot2_stock lag_r_dot_stock lag2_r_dot_stock if year >= 1981
+							
+						** Initial arima
+						predict e_stock, xb
+						replace e_stock 				= v_stock - e_stock		//Convert to error
+						** Correlogram
+						ac  e_stock, ylabels(-.4(.2).6) name(ac_stock, replace)
+						//graph save ac_stock, replace
+						pac e_stock, ylabels(-.4(.2).6) name(pac_stock, replace)
+						//graph save pac_stock, replace
+						graph combine ac_stock pac_stock, rows(2) cols(1)
+						drop e_*
+						
+						** ARIMA
+						
+																													
+						***********
+						** Bond
+						***********
+													
+						** Initial reg
+						reg r_bond grav_term2_stock_bond grav_term2_house_bond  ///
+							acc_ddot2_bond acc_sdot2_bond lag_r_dot_bond lag2_r_dot_bond if year >= 1981
+							
+						** Initial arima
+						predict e_bond, xb
+						replace e_bond 				= v_bond - e_bond		//Convert to error
+						** Correlogram
+						ac  e_bond, ylabels(-.4(.2).6) name(ac_bond, replace)
+						//graph save ac_bond, replace
+						pac e_bond, ylabels(-.4(.2).6) name(pac_bond, replace)
+						//graph save pac_bond, replace
+						graph combine ac_bond pac_bond, rows(2) cols(1)
+						drop e_*
+						
+						** ARIMA
+						arima r_bond grav_term2_stock_bond grav_term2_house_bond  ///
+							acc_ddot2_bond acc_sdot2_bond lag_r_dot_bond lag2_r_dot_bond if year >= 1981, ar(1) ma() 
+						estat aroots	
+						arima r_bond grav_term2_stock_bond grav_term2_house_bond  ///
+							acc_ddot2_bond acc_sdot2_bond lag_r_dot_bond lag2_r_dot_bond if year >= 1981, ar() ma(1) 
+						estat aroots
+						arima r_bond grav_term2_stock_bond grav_term2_house_bond  ///
+							acc_ddot2_bond acc_sdot2_bond lag_r_dot_bond lag2_r_dot_bond if year >= 1981, ar() ma(1 2 3) 
+						estat aroots
+						arima r_bond grav_term2_stock_bond grav_term2_house_bond  ///
+							acc_ddot2_bond acc_sdot2_bond lag_r_dot_bond lag2_r_dot_bond if year >= 1981, ar() ma(2) 
+						estat aroots
+						
+						
+					} //end if
+					di "Done with Velocity."
+								
+					asdf_combined
 				
 					////////////
 					** 1. Ideal rocket
 					////////////
-					scalar rocket = 1
+					scalar rocket = 1111
 					if rocket == 1 {
 						
 						** Load
@@ -1280,59 +1674,11 @@ program 			define 	NBProblem
 						
 					} //end if
 					di "Done with perfect rocket."
-					
-					////////////
-					** 1.1 Rocket - Mass transfer
-					////////////
-					scalar rocket = 1
-					if rocket == 1 {
-						
-						** Load
-						cd_nb_stage
-						use arima_data, clear
-							
-						** Need welfare decomposition of price (valuation) and quanity effects here
-						
-						
-						
-						omojmnlklkk
-							
-						** Estimate "u" 
-						** If u_hat is positive, velocity interaction term == negative 1 -- ablating, switching signs -- accreting 
-						** (4.9.25 p.3) estimate of average velocity of the ejected mass
-						** Conditional estimates of mean ejected velocity
-						** Here, the first coefficient b1 is "u" (4.9.25 p.3) estimate of velocity of the ejected mass
-						** Updated to 4.16.25 p1 -- inverse of the fM variable less interaction term int_
-						** Post 1981
-						reg a_stock fminv_stock	int_stock	if year>1981, vce(robust)  
-						reg a_bond  fminv_bond 	int_bond	if year>1981, vce(robust)  
-						reg a_house fminv_house int_house	if year>1981, vce(robust)  
-					
-						reg a_house indu_house#c.fminv_house int_house	if year>1981, vce(robust)  
-					
-						** Acceleration a - house
-						reg a_house fminv_house indu_house int_house, vce(robust) 
-						reg a_house fminv_house indu_house int_house
-						predict e_house, xb
-						replace e_house 				= r_house - e_house		//Convert to error
-						** Correlogram
-						ac  e_house, ylabels(-.4(.2).6) name(ac_house, replace)
-						//graph save ac_house, replace
-						pac e_house, ylabels(-.4(.2).6) name(pac_house, replace)
-						//graph save pac_house, replace
-						graph combine ac_house pac_house, rows(2) cols(1)
-						drop e_*
-						** ARIMA
-						arima a_house fminv_house indu_house int_house, ar(1 2) ma() 
-						estat aroots
-						
-					} //end if
-					di "Done with transfer rocket."
 								
 					////////////
 					** 3-body - motion
 					////////////
-					scalar threeb = 1
+					scalar threeb = 1111
 					if threeb == 1 {
 						
 						** Load
@@ -1426,41 +1772,7 @@ program 			define 	NBProblem
 						
 					} //end if
 					di "Done with 3-body."
-										
-					////////////
-					** Rocket + Gravity
-					////////////
-					scalar rocket = 1
-					if rocket == 1 {
-						
-						** Load
-						cd_nb_stage
-						use arima_data, clear
-							
-							
-							
-							
-							
-							
-							
-							
-							
-							
-							
-							
-							
-							
-							
-							
-							
-							
-							
-						asdf_combined
-							
-					} //end if
-					di "Done with Merged."
-				
-				
+					
 					////////////
 					** Add risk premium
 					////////////
@@ -1487,11 +1799,10 @@ program 			define 	NBProblem
 					} //end if
 					di "Done with risk."
 				
-				
 					////////////
 					** Bonds
 					////////////
-					scalar bon 				= 1
+					scalar bon 				= 1111
 					if bon == 1 {
 						
 						** Load
@@ -1542,14 +1853,10 @@ program 			define 	NBProblem
 					} //end if
 					di "Done with bonds NB."
 						
-						
-						
-						
-						
 					////////////
 					** Stock
 					////////////
-					scalar stoc 			= 1
+					scalar stoc 			= 1111
 					if stoc == 1 {
 													
 						** Stock acceleration
@@ -1578,7 +1885,7 @@ program 			define 	NBProblem
 					////////////
 					** House
 					////////////
-					scalar hous 				= 1
+					scalar hous 			= 1111
 					if hous == 1 {
 											
 						** House acceleration
@@ -1742,39 +2049,6 @@ program 			define 	NBProblem
 					** Save
 					cd_nb_stage
 					save arima_data, replace
-									
-					////////////
-					** General Rocket + Gravity
-					////////////
-					scalar rocket = 1
-					if rocket == 1 {
-						
-						** Load
-						cd_nb_stage
-						use arima_data, clear
-							
-							
-							
-							
-							
-							
-							
-							
-							
-							
-							
-							
-							
-							
-							
-							
-							
-							
-							
-						asdf_combined
-							
-					} //end if
-					di "Done with Merged."
 				
 					////////////
 					** 1. Ideal rocket
@@ -1998,7 +2272,6 @@ program 			define 	NBProblem
 					} //end if
 					di "Done with risk."
 				
-				
 					////////////
 					** Bonds
 					////////////
@@ -2052,10 +2325,6 @@ program 			define 	NBProblem
 					
 					} //end if
 					di "Done with bonds NB."
-						
-						
-						
-						
 						
 					////////////
 					** Stock
