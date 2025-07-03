@@ -1433,7 +1433,25 @@ program 			define 	NBProblem
 						arima net_a_bond grav_term_stock_bond grav_term_house_bond  ///
 						acc_ddot_bond acc_sdot_bond if year >= 1981, ar(1) ma(2) 
 						estat aroots		
-
+						
+						***********
+						** SUR
+						***********
+						** Initial reg
+						reg a_stock grav_term_bond_stock grav_term_house_stock  	///
+							acc_ddot_stock acc_sdot_stock lag_v_dot_stock if year >= 1981
+						reg a_bond grav_term_stock_bond grav_term_house_bond  		///
+							acc_ddot_bond acc_sdot_bond lag_v_dot_bond if year >= 1981	
+						reg a_house grav_term_stock_house grav_term_bond_house  	///
+							acc_ddot_house acc_sdot_house lag_v_dot_house if year >= 1981
+						** SUR
+						sureg (a_stock grav_term_bond_stock grav_term_house_stock  	///
+							acc_ddot_stock acc_sdot_stock lag_v_dot_stock) 			///
+							(a_bond grav_term_stock_bond grav_term_house_bond  		///
+							acc_ddot_bond acc_sdot_bond lag_v_dot_bond) 			///
+							(a_house grav_term_stock_house grav_term_bond_house 	///
+							acc_ddot_house acc_sdot_house lag_v_dot_house) if year >= 1981
+						
 					} //end if
 					di "Done with Acceleration."
 				
@@ -1543,7 +1561,7 @@ program 			define 	NBProblem
 						
 						** Initial reg
 						reg r_house grav_term2_stock_house grav_term2_bond_house  ///
-							acc_ddot2_house acc_sdot2_house lag_r_dot_house lag2_r_dot_house if year >= 1981
+							acc_ddot2_house acc_sdot2_house lag_r_dot_house lag2_r_dot_house if year >= 1981, noconstant
 							
 						** Initial arima
 						predict e_house, xb
@@ -1557,6 +1575,9 @@ program 			define 	NBProblem
 						drop e_*
 						
 						** ARIMA
+						arima r_house grav_term2_stock_house grav_term2_bond_house  ///
+							acc_ddot2_house acc_sdot2_house lag_r_dot_house lag2_r_dot_house if year >= 1981, ar(1) ma() 
+						estat aroots	
 						arima r_house grav_term2_stock_house grav_term2_bond_house  ///
 							acc_ddot2_house acc_sdot2_house lag_r_dot_house lag2_r_dot_house if year >= 1981, ar(2) ma() 
 						estat aroots	
@@ -1584,8 +1605,7 @@ program 			define 	NBProblem
 						drop e_*
 						
 						** ARIMA
-						
-																													
+																					
 						***********
 						** Bond
 						***********
@@ -1618,8 +1638,116 @@ program 			define 	NBProblem
 						arima r_bond grav_term2_stock_bond grav_term2_house_bond  ///
 							acc_ddot2_bond acc_sdot2_bond lag_r_dot_bond lag2_r_dot_bond if year >= 1981, ar() ma(2) 
 						estat aroots
+												
+						***********
+						** Ornstein-Uhlenbeck model
+						** Continuous time analog to the AR(1)
+						** William Smith, February 2010, On the Simulation and Estimation of the Mean-Reverting Ornstein-Uhlenbeck Process
+						***********
+						scalar orn == 1
+						if orn == 1 {
+							
+						** Load
+						cd_nb_stage
+						use arima_data, clear
+								
+							**********	
+							** Stock
+							** Naive LS
+							** Initial reg
+							reg v_stock lag_r_stock if year >= 1981
+							* lamda = b
+							nlcom _b[lag_r_stock]
+							* mu = a / b
+							nlcom _b[_cons] /  _b[lag_r_stock]
+							* sigma = se(Epsilon)
+							local sde = e(rmse)
+								di "sde: `sde'."
+							scalar sde = e(rmse)
+								scalar list sde
+							** Exact LS
+							** Initial reg
+							reg r_stock lag_r_stock if year >= 1981
+							* lamda = -ln(b)
+							nlcom -1*ln(_b[lag_r_stock]) 
+							* mu = a / (1-b)
+							nlcom _b[_cons] /  (1 - _b[lag_r_stock])
+							* sigma = f(Epsilon, mu, lamda)
+							scalar sde = e(rmse)
+								scalar list sde
+							nlcom sde * sqrt( 2 * (-1*ln(_b[lag_r_stock])/*end ln*/)/*end lambda*/ / (1-exp(-1 * 2* (-1*ln(_b[lag_r_stock])/*end ln*/)/*end lambda*/ )/*end exp*/)/*end denom*/) /*end sqrt*/
+								
+							** Compare to AR(1)
+							** Correlogram
+							ac  r_stock, ylabels(-.4(.2).6) name(ac_stock, replace)
+							pac r_stock, ylabels(-.4(.2).6) name(pac_stock, replace)
+							//graph save pac_stock, replace
+							graph combine ac_stock pac_stock, rows(2) cols(1)
+							** ARIMA
+							arima r_stock if year >= 1981, ar(1) ma() 
+							estat aroots	
+							
+								
+							**********	
+							** Bond						
+							** Naive LS
+							** Initial reg
+							reg v_bond lag_r_bond //if year >= 1949
+							* lamda = b
+							nlcom _b[lag_r_bond]
+							* mu = a / b
+							nlcom _b[_cons] /  _b[lag_r_bond]
+							* sigma = se(Epsilon)
+							scalar sde = e(rmse)
+								scalar list sde
+							** Exact LS
+							** Initial reg
+							reg r_bond lag_r_bond if year >= 1981
+							* lamda = -ln(b)
+							nlcom -1*ln(_b[lag_r_bond]) 
+							* mu = a / (1-b)
+							nlcom _b[_cons] /  (1 - _b[lag_r_bond])
+							* sigma = f(Epsilon, mu, lamda)
+							scalar sde = e(rmse)
+								scalar list sde
+							nlcom sde * sqrt( 2 * (-1*ln(_b[lag_r_bond])/*end ln*/)/*end lambda*/ / (1-exp(-1 * 2* (-1*ln(_b[lag_r_bond])/*end ln*/)/*end lambda*/ )/*end exp*/)/*end denom*/) /*end sqrt*/
+								
+							**********	
+							** House	
+							** Naive LS
+							** Initial reg
+							reg v_house lag_r_house if year >= 1981
+							* lamda = b
+							nlcom _b[lag_r_house]
+							* mu = a / b
+							nlcom _b[_cons] /  _b[lag_r_house]
+							* sigma = se(Epsilon)
+							scalar sde = e(rmse)
+								scalar list sde
+							** Exact LS
+							** Initial reg
+							reg r_house lag_r_house if year >= 1981
+							* lamda = -ln(b)
+							nlcom -1*ln(_b[lag_r_house]) 
+							* mu = a / (1-b)
+							nlcom _b[_cons] /  (1 - _b[lag_r_house])
+							* sigma = f(Epsilon, mu, lamda)
+							scalar sde = e(rmse)
+								scalar list sde
+							nlcom sde * sqrt( 2 * (-1*ln(_b[lag_r_house])/*end ln*/)/*end lambda*/ / (1-exp(-1 * 2* (-1*ln(_b[lag_r_house])/*end ln*/)/*end lambda*/ )/*end exp*/)/*end denom*/) /*end sqrt*/
 						
-						
+							** Compare to AR(1)
+							** Correlogram
+							ac  r_house, ylabels(-.4(.2).6) name(ac_house, replace)
+							pac r_house, ylabels(-.4(.2).6) name(pac_house, replace)
+							//graph save pac_house, replace
+							graph combine ac_house pac_house, rows(2) cols(1)
+							** ARIMA
+							arima r_house if year >= 1981, ar(1) ma() 
+							estat aroots	
+							
+						} //end if
+						di "Done with Ornstein-Uhlenbeck."
 					} //end if
 					di "Done with Velocity."
 								
