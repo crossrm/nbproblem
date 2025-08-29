@@ -76,7 +76,7 @@ program 			define 	NBProblem
 			set min_memory 0
 			set more off, permanently
 			set scrollbufsize 300000
-			
+
 			** Margins plot fomat - Figure 2 Income
 			scalar article_format = 1
 			if article_format == 1 {
@@ -376,18 +376,340 @@ program 			define 	NBProblem
 			scalar treas = 1
 			if treas == 1 {
 				
-				** Open Treas data
+				** Open Treas outstanding data
 				cd_nb_source
 				import excel "TreasuryDebt", sheet("Debt") firstrow clear
 				keep year DebtOut
 				renvars *, lower
-				order year debtout
+				gen month					= 9
+				order year month debtout
 				destring *, replace
-				
+				replace debtout				= debtout / 1000000		//report in millions
+								
 				** Save
 				cd_nb_stage
 				save debt_out, replace
+				use debt_out, clear
+							
+				** Gen full history monthly panel 
+				** Only enable this on the 2nd run of the program - depends on a file saved below
+				scalar treasmo = 1
+				if treasmo == 1 {
+						
+					** Load monthly
+					cd_nb_source
+					import excel "MonthlyTreasuryDebt", sheet(monthly) firstrow clear
+					
+					** Clean for join
+					keep if SecurityTypeDescription == "Total Public Debt Outstanding"
+					renvars *, lower
+					rename totalpublicdebtoutstandingi mdebtout
+					keep recorddate mdebtout year month
+					
+					** Save 
+					cd_nb_stage
+					save debt_out_mo, replace
+					use debt_out_mo, clear
+				
+					** Months
+					clear all
+					set obs 12
+					gen month 								= _n
+					gen join_one							= 1
+					cd_nb_stage
+					save join_months, replace
+					** Years
+					clear all
+					local span 	= 2025 - 1790 + 1
+					set obs `span'
+					gen year			=  _n + 1790 - 1
+					duplicates drop
+					gen join_one							= 1
+					cd_nb_stage
+					joinby join_one using join_months, unmatched(master)
+						tab _merge
+						drop _merge
+					drop join_one
+					order year month
+					sort year month
+					
+					** Save monthly panel
+					cd_nb_stage
+					save monthly_panel, replace
+					use monthly_panel, clear
+									
+					** Join annual
+					cd_nb_stage
+					joinby year month using debt_out, unmatched(both)
+						tabulate _merge
+						drop _merge
+					
+					** Join monthly
+					cd_nb_stage
+					joinby year month using debt_out_mo, unmatched(both)
+						tabulate _merge
+						drop _merge
+					
+					** Look
+					scalar look = 0
+					if look == 1 {
+						
+						sort year
+						egen avg					= mean(mdebtout), by(year)
+						replace avg					= round(avg)
+						gsort -year -month
+						gen diffmoavg			= debtout - avg
+						gen diff_dec			= debtout - mdebtout
+						sum diff* if debtout ~= .
+						drop diff* avg
+						
+					} //end if
+					di "Done with look treas."
+					
+					** Save intermediate
+					cd_nb_stage
+					save treas_progress, replace	
+					
+					************************************
+					** Covariates to impute missing months
+					************************************
+					** Import control
+					cd_nb_source
+					import excel "PartyControl.xlsx", sheet("control") cellrange(A1:D170) firstrow clear
+					renvars *, lower
+					** Save for join
+					cd_nb_stage
+					save control, replace
+					
+					** Import corporate rates
+					cd_nb_source
+					import excel "AAA.xlsx", sheet("Monthly") cellrange(A1:F1280) firstrow clear
+					renvars *, lower
+					keep aaa-day
+					** Save for join
+					cd_nb_stage
+					save corporates, replace
+					
+					** Import conflicts
+					cd_nb_source
+					import excel "conflicts.xlsx", sheet("conflicts") cellrange(A1:E2014) firstrow clear
+					renvars *, lower
+					keep year-conflicts
+					** Save for join
+					cd_nb_stage
+					save conflicts, replace
+					
+					************************************
+					** Impute missing months
+					************************************
+					** Save intermediate
+					cd_nb_stage
+					use treas_progress, clear
+									
+					gsort -year -month
+					drop recorddate
+					
+					** Gen september ending debt covariate
+					gen fiscalyear								= year
+					replace fiscalyear							= fiscalyear - 1 if month < 10
+					gen double debout_zero						= debtout * 1000				// multiply to preserve accuracy of egen sum function below
+					replace debout_zero							= 0 if debtout ==.
+					sort fiscalyear year month
+					by fiscalyear: egen double ending_debt		= sum(debout_zero)
+					replace ending_debt							= ending_debt / 1000			// divide to return to correct units 
+					drop debout_zero
+					** Gen starting debt covariate
+					sort fiscalyear year month
+					by fiscalyear: gen fiscalmonth				= _n
+					** Correct first year
+					replace fiscalmonth							= fiscalmonth + 3 if fiscalyear == 1789
+					sort fiscalyear fiscalmonth
+					gen obs										= _n
+					sort obs
+					tsset obs
+					gen double starting_debt					= L12.ending_debt
+					** Correct 2nd year
+					replace starting_debt						= L3.ending_debt if fiscalyear == 1790 & fiscalmonth < 4
+					** Growth covariates
+					gen double debt_growth						= ending_debt - starting_debt
+					gen double debt_growth_mo					= debt_growth / 12
+					sort fiscalyear
+					by fiscalyear: gen double debt_cumul		= sum(debt_growth_mo) 
+					gen double debt_linear						= starting_debt + debt_cumul
+					
+					** Clean up
+					drop if starting_debt == 0 
+					drop if starting_debt == . 
+					drop if mdebtout == . & year > 2020
+									
+					** Reg
+					reg mdebtout starting_debt ending_debt debt_linear i.fiscalmonth if ending_debt > 0 & fiscalmonth ~= 12
+				
+					** Monthly Change (dep var)
+					sort obs
+					tsset obs
+					gen double change							= mdebtout - L.mdebtout 
+						*scatter change obs if change ~=.
+					gen double changep							= change / starting_debt
+					gen double end_diff							= ending_debt - debt_linear
+					
+						sum if fiscalyear == 2002
+				
+					** Approximations
+					set seed	1015115							// 101 1011 1015 10151 101511 1015112(55 test) 1015115(55) / 1014115(55) incl Dec
+					gen randsample			= runiform()
+					sort randsample
+					gen ob					= _n
+					sum ob
+					local holdout			= 0.55
+					local upper				= ceil(r(max) * `holdout')
+					gen incl 				= (ob <= `upper')
+						di "Upper is `upper', holdout is `holdout'."
+						sum ob randsample incl if mdebtout ~= .  & ending_debt > 0 //& fiscalmonth ~= 12
+						tab incl if mdebtout ~= .  & ending_debt > 0 //& fiscalmonth ~= 12
+					replace incl			= (incl==1 & mdebtout ~= . & ending_debt > 0 ) //& fiscalmonth ~= 12)
+					drop ob
+					
+						** Reg
+						reg change 	starting_debt ending_debt debt_linear i.fiscalmonth c.obs##c.obs if (incl) & ending_debt > 0 //& fiscalmonth ~= 12
+						fit_nb change 
+						reg changep starting_debt debt_linear  if (incl) & ending_debt > 0 //& fiscalmonth ~= 12
+						fit_nb changep 
+					
+					** More covars
+					** Corporates
+					cd_nb_stage
+					joinby year month using corporates, unmatched(master)
+						tab _merge
+						drop _merge
+					drop day
+					** Conflicts
+					cd_nb_stage
+					joinby year month using conflicts, unmatched(master)
+						tab _merge
+						drop _merge
+					drop day
+					replace conflicts				= (conflicts>0)
+					** Control
+					cd_nb_stage
+					joinby year using control, unmatched(master)
+						tab _merge
+						drop _merge
+					** CPI GDP Pop - from file saved below
+					cd_nb_stage
+					joinby year month using treas_covariates, unmatched(master)
+						tab _merge
+						drop _merge
+					
+						** Look
+						sum change* starting_debt ending_debt debt_linear i.fiscalmonth c.obs##c.obs aaa baa conflicts house* senat* presid* cpi r_price* pop gdp if (incl) & ending_debt > 0 & fiscalmonth ~= 12
+						order year month change* starting_debt ending_debt debt_linear obs aaa baa conflicts house* senat* presid* cpi r_price* pop gdp
+						corr change* starting_debt ending_debt debt_linear obs aaa baa conflicts house* senat* presid* cpi r_price* pop gdp if (incl) & ending_debt > 0 & fiscalmonth ~= 12
+						sort year month 
+						** Reg
+						reg change 	starting_debt ending_debt debt_linear i.fiscalmonth c.obs##c.obs aaa baa conflicts house* senat* presid* cpi r_price* pop gdp if (incl) & ending_debt > 0 & fiscalmonth ~= 12
+						fit_nb change 
+						reg changep starting_debt 			  debt_linear i.fiscalmonth 			 aaa baa conflicts house* senat* presid* cpi r_price pop gdp if (incl) & ending_debt > 0 & fiscalmonth ~= 12
+						fit_nb changep 
+					
+					** Save Turing Bot
+					cd_nb_stage
+					savesome change* starting_debt ending_debt debt_linear obs aaa baa conflicts house* senat* presid* cpi r_price* pop gdp if (incl) & ending_debt > 0 & fiscalmonth ~= 12 & change~=. using turing_treas, replace
+					//use turing_treas, clear
+					
+						** Interactive models
+						** First look - 0.0046
+						reg change 	starting_debt ending_debt debt_linear i.fiscalmonth c.obs##c.obs aaa baa conflicts house* senat* presid* cpi r_price* pop gdp if (incl) & ending_debt > 0 //& fiscalmonth ~= 12
+						fit_nb change 
+						** Linear - 0.036 / 0.102 / 0.1793 / 0.1204
+						reg change 	gdp r_priceR baa presidency housemaj r_price debt_linear if (incl) & ending_debt > 0 & fiscalmonth ~= 12
+						fit_nb change 
+						** Partial interactions - 0.10	/ 0.1713 / 0.1711 / 0.2980 / 0.2977
+						reg change 	gdp r_priceR c.gdp#c.baa##c.presidency##c.housemaj##c.r_price debt_linear presidency r_price if (incl) & ending_debt > 0 // & fiscalmonth ~= 12
+						fit_nb change	
+						** Partial interactions II - 0.119 / 0.172 / 0.1678	/ 0.2520 / 0.2936
+						reg change 	gdp r_priceR c.gdp#c.baa##c.presidency##c.housemaj##c.r_price conflicts#c.debt_linear#c.gdp#housemaj  if (incl) & ending_debt > 0 // & fiscalmonth ~= 12
+						fit_nb change	
+						** Partial interactions III - 0.094	/ 0.1175 / 0.1597 / 0.1080 / 0.1700
+						reg change gdp r_priceR c.gdp#c.baa##c.presidency##c.housemaj#c.r_price#c.r_priceR conflicts#c.debt_linear#c.gdp#housemaj  if (incl) & ending_debt > 0 // & fiscalmonth ~= 12
+						fit_nb change	
+						** Partial interactions IV - 0.1382 / 0.1581 / 0.2240 / 0.2977 / 0.2679 / 0.1846 / 0.2040 / 0.2404
+						reg change 	gdp r_priceR c.baa#c.aaa##c.aaa c.gdp#c.baa##presidency##housemaj##c.r_price conflicts#c.debt_linear#c.gdp#housemaj  if (incl) & ending_debt > 0 // & fiscalmonth ~= 12
+						fit_nb change	
+						** Partial interactions V - 0.1875 / 0.1344 / 0.1985 / 0.2983 / 0.2411 / 0.3057 / 0.2109 / 0.2407
+						reg change 	c.gdp#c.r_priceR c.baa#c.aaa##c.aaa#c.pop c.gdp#c.baa##presidency##housemaj##c.r_price#conflicts#c.debt_linear#c.gdp   if (incl) & ending_debt > 0 // & fiscalmonth ~= 12
+						fit_nb change	
+						
+						sum change changep starting_debt ending_debt mdebtout debt_linear gdp r_priceR baa aaa pop presidency housemaj r_price conflicts  if (incl) & ending_debt > 0 // & fiscalmonth ~= 12
+						
+					** Save intermediate
+					cd_nb_stage
+					save treas_progress2, replace
+					use treas_progress2, clear
+					
+									
+					** Impute
+					drop if ending_debt == 0
+					drop incl changep
+					reg change 	c.gdp#c.r_priceR c.baa#c.aaa##c.aaa#c.pop c.gdp#c.baa##presidency##housemaj##c.r_price#conflicts#c.debt_linear#c.gdp   //if ending_debt > 0 // & fiscalmonth ~= 12
+					reg change obs
+					predict double yhat, xb
+					
+					** Correct for beginning and ending (scale) and replace missing
+						order obs fiscal* yhat change starting_debt ending_debt mdebtout debtout debt_linear gdp r_priceR baa aaa pop presidency housemaj r_price conflicts  
+						gsort -obs
+					sort fiscalyear fiscalmonth
+					by fiscalyear: egen double sum_change_delta		= sum(change)
+					by fiscalyear: egen double yhat_delta			= sum(yhat)
+					gen double annual_delta							= ending_debt - starting_debt	
+					
+					drop if yhat ==.
+				
+					** Scale 
+						sum yhat *delta
+					replace yhat									= yhat * annual_delta / yhat_delta
+					sort fiscalyear fiscalmonth
+					by fiscalyear: egen double yhat2_delta			= sum(yhat)
+						sum yhat *delta
+					
+					** Generate mdebtout
+					gen double mdebtout2							= mdebtout
+					replace mdebtout2								= debtout if mdebtout == . & debtout ~= . 
+					** Loop fill forward
+					sort obs
+					tsset obs
+					foreach num of numlist 1/11 {
+						
+						replace mdebtout2							= L1.mdebtout2 + yhat if mdebtout2 == . & fiscalmonth == `num'
+						
+					} //end loop
+					di "Done with fill change loopf."
+					** Loop fill backwards
+					sort obs
+					tsset obs
+					foreach num of numlist 11/1 {
+						
+						replace mdebtout2							= F1.mdebtout2 - yhat if mdebtout2 == . & fiscalmonth == `num'
+						
+					} //end loop
+					di "Done with fill change loopb."
+										
+						order obs year month fiscal* yhat change *_delta starting_debt ending_debt mdebtout* debtout 	
+						gsort -obs 
+					
+					** Keep
+					sort year month
+					order year month *debtout*
+					keep year month mdebtout2
+					rename mdebtout2 debtout
+					
+					** Save
+					cd_nb_stage
+					save debt_out, replace
 			
+				} //end if
+				di "Done with monthly treasury impute."
+				
 			} //end if
 			di "Done with treas data."
 			
@@ -449,8 +771,10 @@ program 			define 	NBProblem
 				** Keep and save
 				order 	year month dividend earnings snp500 cpi r_stock r_bond r_price*
 				keep 	year month dividend earnings snp500 cpi r_stock r_bond r_price*
+				
 				cd_nb_stage
 				save shiller_data, replace
+				use shiller_data, clear
 				
 				** Prep Shiller housing price index (2000 January == 100)
 				cd_nb_shiller
@@ -576,6 +900,11 @@ program 			define 	NBProblem
 				order year month
 				sort year month
 				
+				** Save monthly panel
+				cd_nb_stage
+				save monthly_panel, replace
+				use monthly_panel, clear
+				
 				** Join annual units (repeat across months, then adjust)
 				cd_nb_stage
 				joinby year using moura_housing, unmatched(master)
@@ -683,9 +1012,11 @@ program 			define 	NBProblem
 					drop _merge
 				gen debt_orig				= (month==12 & debtout~=.)
 				
+				asdf_monthly 
+				
 				** Naming - billions
 				rename debtout w_bond
-				replace w_bond				= w_bond / 1000000000 // convert to billions
+				replace w_bond				= w_bond / 1000 // convert from millions to billions
 				
 				** Join stock bond returns
 				cd_nb_stage
@@ -754,6 +1085,7 @@ program 			define 	NBProblem
 				** Save
 				cd_nb_stage
 				save all_join_temp, replace
+				use all_join_temp, clear
 				
 				******************************
 				** Monthly variation in rent
@@ -874,6 +1206,11 @@ program 			define 	NBProblem
 				** Save
 				cd_nb_stage
 				save analysis_data, replace
+				use analysis_data, replace
+				
+				** Save CPI, GDP, POP for Covariate run - 2nd run
+				cd_nb_stage
+				savesome year month cpi gdp pop r_price r_priceR using treas_covariates, replace
 				
 			} //end if
 			di "Done with join for analysis."
@@ -1195,6 +1532,10 @@ program 			define 	NBProblem
 						** Accretion
 						gen acd_`pri'			= acc_dem_`pri'
 						gen acs_`pri'			= acc_sup_`pri'
+						
+						** Lagged accretion -- 8.4.25 RC
+						gen lag_acd_`pri'			= L.acc_dem_`pri'
+						gen lag_acs_`pri'			= L.acc_sup_`pri'
 						
 						** Mass difference and ratio
 						** Acceleration
@@ -1554,6 +1895,25 @@ program 			define 	NBProblem
 						** Load
 						cd_nb_stage
 						use arima_data, clear
+						
+						** Save turingbot
+						order *stock* *bond* *house*
+						order year r_* v_* a_* lag_r_* lag_v_* lag_a_* lag_m_* lag_acd_* lag_acs_*
+						keep year r_* v_* a_* lag_r_* lag_v_* lag_a_* lag_m_* lag_acd_* lag_acs_*
+						drop *dot*
+						drop *price*
+						drop if lag_m_stock == .
+						cd_stage
+						save turingbot_data, replace
+						use turingbot_data, clear
+						
+							drop if year < 1948
+							drop r_stock r_bond r_house v_stock v_bond a_stock a_bond a_house
+							replace v_house 			= v_house * 100
+							
+						** Load
+						cd_nb_stage
+						use arima_data, clear
 													
 						***********
 						** House
@@ -1561,7 +1921,7 @@ program 			define 	NBProblem
 						
 						** Initial reg
 						reg r_house grav_term2_stock_house grav_term2_bond_house  ///
-							acc_ddot2_house acc_sdot2_house lag_r_dot_house lag2_r_dot_house if year >= 1981, noconstant
+							acc_ddot2_house acc_sdot2_house lag_r_dot_house lag2_r_dot_house if year >= 1949, noconstant
 							
 						** Initial arima
 						predict e_house, xb
@@ -1575,6 +1935,7 @@ program 			define 	NBProblem
 						drop e_*
 						
 						** ARIMA
+						** House rate rocket equation is AR-1 stationary in conditioned expression (already includes some lag terms) 
 						arima r_house grav_term2_stock_house grav_term2_bond_house  ///
 							acc_ddot2_house acc_sdot2_house lag_r_dot_house lag2_r_dot_house if year >= 1981, ar(1) ma() 
 						estat aroots	
@@ -1584,7 +1945,146 @@ program 			define 	NBProblem
 						arima r_house grav_term2_stock_house grav_term2_bond_house  ///
 							acc_ddot2_house acc_sdot2_house lag_r_dot_house lag2_r_dot_house if year >= 1981, ar() ma(1) 
 						estat aroots	
-																
+										
+						** Reload
+						cd_nb_stage
+						use arima_data, clear
+											
+						** Approximations
+						set seed	101
+						gen randsample			= runiform()
+						sort randsample
+						gen ob					= _n
+						sum ob
+						local holdout			= 0.70
+						local upper				= ceil(r(max) * `holdout')
+						gen incl 				= (ob <= `upper')
+							di "Upper is `upper', holdout is `holdout'."
+							sum ob randsample incl if year >= 1900
+							tab incl if year >= 1900
+						replace incl			= (incl==1 & year >= 1900)
+						//replace incl			= (incl==1)
+												
+						** Linear -- 46.76% loss, 85.66% velocity, 84.21% accel. // 43.87%, 73.6%, 86.6% 1949 //13.95 16.22 68.7 1900
+						reg r_house lag_r_bond lag_r_stock lag_r_house lag_m_stock lag_m_bond lag_m_house lag_acd_stock lag_acs_stock lag_acd_bond lag_acs_bond lag_acd_house lag_acs_house if (incl)
+						fit_nb r_house 
+												
+						reg v_house lag_r_bond lag_r_stock lag_r_house lag_m_stock lag_m_bond lag_m_house lag_acd_stock lag_acs_stock lag_acd_bond lag_acs_bond lag_acd_house lag_acs_house if (incl)
+						fit_nb v_house 
+						
+						reg a_house lag_r_bond lag_r_stock lag_r_house lag_m_stock lag_m_bond lag_m_house lag_acd_stock lag_acs_stock lag_acd_bond lag_acs_bond lag_acd_house lag_acs_house if (incl)
+						fit_nb a_house 
+						
+						** Test Expansion
+						** larger -- 46.18% loss 1981, 45.3% 1949, 12.62% 1900
+						reg r_house lag_r_bond lag_r_stock lag_r_house c.lag_m_stock#c.lag_m_stock lag_m_bond c.lag_m_house#c.lag_m_house c.lag_acd_stock#c.lag_acd_stock c.lag_acs_stock#c.lag_acs_stock lag_acd_bond ///
+							lag_acs_bond c.lag_acd_house##c.lag_acd_house c.lag_acs_house#c.lag_acs_house if (incl)
+						fit_nb r_house
+						** smaller -- 41.19% loss 1981, 45.1% 1949, 14.65% 1900
+						reg r_house lag_r_bond lag_r_stock lag_r_house lag_m_stock lag_m_bond lag_m_house lag_acd_stock c.lag_acs_stock#c.lag_acs_stock lag_acd_bond ///
+							lag_acs_bond c.lag_acd_house##c.lag_acd_house c.lag_acs_house#c.lag_acs_house if (incl)
+						fit_nb r_house
+						
+						** Generate Expansions
+						global nams "stock bond house"
+						global namsac "acs acd"
+						
+						** 2nd order  
+						** Rate loop -- no value add -- housing rate is linear in lagged housing rate
+						foreach nam of global nams {
+							
+							reg r_house c.lag_r_`nam'##c.lag_r_`nam' lag_r_bond lag_r_stock lag_r_house lag_m_stock lag_m_bond lag_m_house lag_acd_stock lag_acs_stock lag_acd_bond lag_acs_bond lag_acd_house lag_acs_house if year >= 1981
+							** Plot
+							sum lag_r_`nam'
+							quietly margins , at(lag_r_`nam' = (4 (0.1) 8) ) 			
+							marginsplot, recast(line) recastci(rarea)
+							
+							* Fit
+							fit_nb r_house
+							
+							pause on
+							pause
+							
+						} //end loop
+						di "Done with loop expansion check r."
+												
+						** Mass loop
+						** stock mass - U - almost no lin
+						** U housing mass - plus lin
+						foreach nam of global nams {
+							
+							reg r_house c.lag_m_`nam'#c.lag_m_`nam' lag_r_bond lag_r_stock lag_r_house lag_m_stock lag_m_bond lag_m_house lag_acd_stock lag_acs_stock lag_acd_bond lag_acs_bond lag_acd_house lag_acs_house if year >= 1981
+							** Plot
+							qui margins , at(lag_m_`nam' = (1 (1000) 50000) ) 			
+							marginsplot, recast(line) recastci(rarea)
+							
+							pause on
+							pause
+							
+						} //end loop
+						di "Done with loop expansion check m."
+							
+						** Acc loop
+						** U in lag_acd_stock - no lin
+						** U in acd_house - plus lin
+						** Inverse U in acs_stock, acs_house - no lin
+						** Decr in acd_house, acd_bond (or U)
+						foreach nam of global nams {
+							
+							foreach nac of global namsac {
+									
+									di "Beginnin nam: `nam', nac: `nac'."
+								
+								reg r_house c.lag_`nac'_`nam'#c.lag_`nac'_`nam' lag_r_bond lag_r_stock lag_r_house lag_m_stock lag_m_bond lag_m_house lag_acd_stock lag_acs_stock lag_acd_bond lag_acs_bond lag_acd_house lag_acs_house if year >= 1981
+								
+								** Plot
+								quietly margins , at(lag_`nac'_`nam' = (-1000000 (10000) 1000000) ) 			
+								marginsplot, recast(line) recastci(rarea)
+								
+									sum lag_`nac'_`nam' year r_house
+								
+								pause on
+								pause
+							
+							} //end loop ac
+							di "Done with AC loop."
+							
+						} //end loop
+						di "Done with loop expansion check acs."
+						
+						** Resulting 2nd-order terms
+						reg r_house lag_r_bond lag_r_stock lag_r_house c.lag_m_stock#c.lag_m_stock lag_m_bond c.lag_m_house#c.lag_m_house c.lag_acd_stock#c.lag_acd_stock c.lag_acs_stock#c.lag_acs_stock lag_acd_bond ///
+							lag_acs_bond c.lag_acd_house##c.lag_acd_house c.lag_acs_house#c.lag_acs_house if year >= 1981
+						reg r_house lag_r_bond lag_r_stock lag_r_house c.lag_m_stock lag_m_bond c.lag_m_house c.lag_acd_stock c.lag_acs_stock#c.lag_acs_stock lag_acd_bond ///
+							lag_acs_bond c.lag_acd_house##c.lag_acd_house c.lag_acs_house#c.lag_acs_house if year >= 1949
+						
+						** Check sig 2nd-order effects
+						sum lag_m_stock lag_m_house lag_acd_stock lag_acs_stock lag_acd_house lag_acs_house if year >= 1949
+						** Stock m - none
+						quietly margins , at(lag_m_stock = (2000 (1000) 50000) ) 		
+						marginsplot, recast(line) recastci(rarea)
+						** House m - none
+						quietly margins , at(lag_m_house = (5000 (1000) 50000) ) 		
+						marginsplot, recast(line) recastci(rarea)
+						** Stock acd - none
+						quietly margins , at(lag_acd_stock = (-8000 (100) 10000) ) 		
+						marginsplot, recast(line) recastci(rarea)
+						** Stock acs - none -- now yes
+						quietly margins , at(lag_acs_stock = (-3000 (100) 2000) ) 		
+						marginsplot, recast(line) recastci(rarea)
+						** House acd - yes
+						quietly margins , at(lag_acd_house = (-3000000 (100000) 7000000) ) 		
+						marginsplot, recast(line) recastci(rarea)
+						** House acs - none
+						quietly margins , at(lag_acs_house = (-40000 (10000) 500000) ) 		
+						marginsplot, recast(line) recastci(rarea)
+						
+						** 2nd order OOS
+						reg r_house lag_r_bond lag_r_stock lag_r_house c.lag_m_stock lag_m_bond c.lag_m_house c.lag_acd_stock c.lag_acs_stock#c.lag_acs_stock lag_acd_bond ///
+							lag_acs_bond c.lag_acd_house##c.lag_acd_house c.lag_acs_house#c.lag_acs_house if year >= 1949
+						
+						asdf_nonlin	
+						
 						***********
 						** Stock
 						***********
@@ -1638,6 +2138,9 @@ program 			define 	NBProblem
 						arima r_bond grav_term2_stock_bond grav_term2_house_bond  ///
 							acc_ddot2_bond acc_sdot2_bond lag_r_dot_bond lag2_r_dot_bond if year >= 1981, ar() ma(2) 
 						estat aroots
+						
+						** Approximations
+						
 												
 						***********
 						** Ornstein-Uhlenbeck model
