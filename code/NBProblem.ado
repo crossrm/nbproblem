@@ -137,10 +137,18 @@ program 			define 	NBProblem
 		***********************************************************
 		** Load and prep 
 		***********************************************************
-		scalar treasmo = 0
-		NBPrep
-		scalar treasmo = 1
-		NBPrep
+		scalar load	= 1
+		if load == 1 {
+			
+			** Run twice 	- first annual treasury data
+			** 				- second to prep monthly treasuries
+			scalar treasmo = 0
+			NBPrep
+			scalar treasmo = 1
+			NBPrep
+			
+		} //end if
+		di "Done with load and prep."
 
 	} //end if
 	di "Done with load and prep."
@@ -245,48 +253,48 @@ program 			define 	NBProblem
 					gen r_prior					= L12.r_current
 					gen q_prior					= L12.q_current				//millions of "bonds" - $1000 face value each, or billions of dollars
 					gen coupon_prior			= r_prior * 10
+					gen coupon_priorm			= L.r_current * 10
 					gen rate_current			= r_current / 100
-					** Current value of prior cash flows (prior coupon (r * 10, valued at current rate r)
+					** Current value of PRIOR cash flows (prior coupon (r * 10, valued at current rate r)
 					** 9 years (of original 10) remaining, but use 10 for price effect, net of duration
-					gen v_cfl					= coupon_prior * (1- (1+rate_current )^-10) / rate_current 	//per $1000 bond
+					gen v_cfl					= coupon_prior  * (1- (1+rate_current )^-10) / rate_current 	//per $1000 bond
+					gen v_cflm					= coupon_priorm * (1- (1+rate_current )^-10) / rate_current 	//per $1000 bond
 					** Value of return of Face value ($1000) (valued at current rate)
 					gen v_future				= 1000 * (1+rate_current )^-10								//per $1000 bond
 					** Gen current price of prior year bonds
 					gen v_total 				= v_cfl + v_future											//per prior year $1000 bond
-					** Current value of all prior year bonds
+					gen v_totalm 				= v_cflm + v_future											//per prior year $1000 bond
+					** Current value of all prior period bonds
 					gen v_current				= v_total * q_prior / 1000									//billions of dollars - millions of bonds ($1000 face value)
+					gen v_currentm				= v_totalm * L.q_current / 1000								//billions of dollars - millions of bonds ($1000 face value)
 					** New issue - total current value (q_bond * 1000), less value of prior issue
 					gen new_issue				= q_bond - v_current 										//billions of dollars - millions of bonds ($1000 face value)
-					
+					gen new_issue_m				= (q_bond- L.q_bond)										//billions of dollars - millions of bonds ($1000 face value)			
+										
 					** For accretion
 					** Gen current price of prior year bonds
 					gen p_current				= v_total													//per prior year $1000 bond
+					gen p_currentm				= v_totalm													//per prior year $1000 bond
 					
 					** Change in value of prior year outstanding
 					** Capital accretion - Bennet quantity indicator - Cross Fare 2009
 					** Decompose accretion - Notes 5.16.25 p.2 
 					gen p_prior					= 1000
-					gen acc_sup_bond			= new_issue * (p_current + p_prior) / 2 				//billions of dollars - millions of bonds ($1000 face value)				
+					gen acc_sup_bond			= new_issue 	* (p_current + p_prior) / 2 				//billions of dollars - millions of bonds ($1000 face value)				
+					gen acc_sup_bondm			= new_issue_m 	* (p_currentm + p_prior) / 2				//billions of dollars - millions of bonds ($1000 face value)	
 					** Use new issue (q' - q) from line 979 above, but reverse sign (q' + q)
 					** Correct 5.29.25 expressed in millions of dollars. 	
-					gen acc_dem_bond			= (p_current - p_prior) * (q_bond + v_current) / 2 		// $0.584 x 3460 bonds (in millions of bonds (billions of dollars)) 
+					gen acc_dem_bond			= (p_current - p_prior) 	* (q_bond + v_current) / 2 		// $0.584 x 3460 bonds (in millions of bonds (billions of dollars)) 
+					gen acc_dem_bondm			= (p_currentm - p_prior)	* (q_bond + v_currentm) / 2 	// $0.584 x 3460 bonds (in millions of bonds (billions of dollars)) 
 					
-					** Gen new_issue (monthly rate)
-					//gen new_issue_m				= new_issue / 12											//millions of bonds - $1000 face value each - current month
-					//gen acc_sup_bondm			= new_issue_m * (p_bondm + p_prior) / 2						// Billions of dollars
-					* Use new issue monthly from above (new issue annual /12), but reverse sign (q' + q) 
-					//gen acc_dem_bondm			= (p_bondm - p_prior) * (q_bond + v_current / 1000))/12 / 2 					//Billions of dollars	
-					
-						sum *bond* v_* coupon* rate* *current *prior new* acc_*
-												
 					** Order
 						order *bond* v_* coupon* rate* *current *prior new*				
 					order year month t w_* r_* p_* q_* *_current *_prior new_issue* acc_*
 				
 					** Clean up bonds
 					drop *_prior *_current v_* coupon* rate* *prior 
-					rename new_issue ni_bondy
-					//rename new_issue_m ni_bondm
+					rename new_issue  ni_bondy
+					rename new_issue_m ni_bondm
 						
 						sum year month t w_* r_* p_* q_* ni* acc_*
 						
@@ -303,10 +311,10 @@ program 			define 	NBProblem
 					gen new_issue				= q_stock - q_prior 		// directly calculable by S&P share-weighting // billions of shares (units)
 					gen new_issue_m				= (q_stock - L.q_stock)		// billions of shares (units)			
 					** Decompose accretion - Notes 5.16.25 p.2 
-					gen acc_sup_stock				= new_issue 	* (p_current + p_prior) / 2 				// billions of dollars
-					gen acc_sup_stockm				= new_issue_m 	* (p_stock + L.p_stock) / 2					// billions of dollars
-					gen acc_dem_stock				= (p_current - p_prior) 	*  (q_stock + q_prior) / 2 		// billions of dollars
-					gen acc_dem_stockm				= (p_current - p_prior) 	*  (q_stock + L.q_stock) / 2 	// billions of dollars
+					gen acc_sup_stock			= new_issue 	* (p_current + p_prior) / 2 					// quantity change * avg price -- billions of dollars
+					gen acc_sup_stockm			= new_issue_m 	* (p_stock + L.p_stock) / 2						// quantity change * avg price -- billions of dollars
+					gen acc_dem_stock			= (p_current - p_prior) 	*  (q_stock + q_prior) / 2 			// price change * avg qty 	   -- billions of dollars
+					gen acc_dem_stockm			= (p_current - L.p_current) *  (q_stock + L.q_stock) / 2 	// price change * avg qty 	   -- billions of dollars
 					
 					rename new_issue 	ni_stocky
 					rename new_issue_m	ni_stockm
@@ -827,7 +835,7 @@ program 			define 	NBProblem
 						drop *dot*
 						drop *price*
 						drop if lag_m_stock == .
-						cd_stage
+						cd_nb_stage
 						save turingbot_data, replace
 						use turingbot_data, clear
 						
@@ -912,7 +920,8 @@ program 			define 	NBProblem
 						** Generate Expansions
 						global nams "stock bond house"
 						global namsac "acs acd"
-						
+						pause on
+					
 						** 2nd order  
 						** Rate loop -- no value add -- housing rate is linear in lagged housing rate
 						foreach nam of global nams {
@@ -926,12 +935,11 @@ program 			define 	NBProblem
 							* Fit
 							fit_nb r_house
 							
-							pause on
-							pause
+							//pause
 							
 						} //end loop
 						di "Done with loop expansion check r."
-												
+										
 						** Mass loop
 						** stock mass - U - almost no lin
 						** U housing mass - plus lin
@@ -942,8 +950,7 @@ program 			define 	NBProblem
 							qui margins , at(lag_m_`nam' = (1 (1000) 50000) ) 			
 							marginsplot, recast(line) recastci(rarea)
 							
-							pause on
-							pause
+							//pause
 							
 						} //end loop
 						di "Done with loop expansion check m."
@@ -966,9 +973,8 @@ program 			define 	NBProblem
 								marginsplot, recast(line) recastci(rarea)
 								
 									sum lag_`nac'_`nam' year r_house
-								
-								pause on
-								pause
+
+								//pause
 							
 							} //end loop ac
 							di "Done with AC loop."
