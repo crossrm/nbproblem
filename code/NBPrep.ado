@@ -895,9 +895,7 @@ program 			define 	NBPrep
 					tab _merge
 					drop _merge
 				gen debt_orig				= (month==12 & debtout~=.)
-				
-				asdf_monthly 
-				
+												
 				** Naming - billions
 				rename debtout w_bond
 				replace w_bond				= w_bond / 1000 // convert from millions to billions
