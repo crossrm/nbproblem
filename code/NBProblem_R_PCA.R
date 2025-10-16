@@ -3,13 +3,13 @@
 ################################################
 
 # Libraries
-#install.packages("faraway")
-#install.packages("MASS")
-#install.packages("lars")
-#install.packages("pls")
-#install.packages("factoextra")
-#install.packages("tidyverse")
-#install.packages("readr")
+# install.packages("faraway")
+# install.packages("MASS")
+# install.packages("lars")
+# install.packages("pls")
+# install.packages("factoextra")
+# install.packages("tidyverse")
+# install.packages("readr")
 
 # Libraries
 library(faraway)
@@ -41,39 +41,39 @@ summary(rates.pca)
 fviz_eig(rates.pca) # Visualization of variance explained by each component
 
 # Variable plot
-fviz_pca_var(rates.pca,
+fviz_pca_var(rates.pca, axes(1, 2),
              col.var = "contrib", # Control variable color using their contributions to the PC
              gradient.cols = c("#70f6ff", "#00AFBB", "#ffd224", "#d8ac00", "#FC4E07", "#a73203"),
              repel = TRUE,     # Avoid text overlapping
              ggtheme = theme_minimal()
 )
 
-##################################
-## Example
-##################################
-# Data
-data("USArrests")
-dim(USArrests)
-
-# Prep
-str(USArrests)
-head(USArrests)
-options(digits=3)
-p<-ncol(USArrests); p # No. of variables
-R<-cor(USArrests); R # Display the correlation matrix
-
-# PCA
-USArrests <- as.data.frame(USArrests)
-arrests.pca <- prcomp(USArrests,center = TRUE,scale. = TRUE)
-names(arrests.pca)
-print(arrests.pca)
-summary(arrests.pca)
-fviz_eig(arrests.pca) # Visualization of variance explained by each component
-
-# Variable plot
-fviz_pca_var(arrests.pca,
-             col.var = "contrib", # Control variable color using their contributions to the PC
-             gradient.cols = c("#70f6ff", "#00AFBB", "#ffd224", "#d8ac00", "#FC4E07", "#a73203"),
-             repel = TRUE,     # Avoid text overlapping
-             ggtheme = theme_minimal()
-)
+# ##################################
+# ## Example
+# ##################################
+# # Data
+# data("USArrests")
+# dim(USArrests)
+# 
+# # Prep
+# str(USArrests)
+# head(USArrests)
+# options(digits=3)
+# p<-ncol(USArrests); p # No. of variables
+# R<-cor(USArrests); R # Display the correlation matrix
+# 
+# # PCA
+# USArrests <- as.data.frame(USArrests)
+# arrests.pca <- prcomp(USArrests,center = TRUE,scale. = TRUE)
+# names(arrests.pca)
+# print(arrests.pca)
+# summary(arrests.pca)
+# fviz_eig(arrests.pca) # Visualization of variance explained by each component
+# 
+# # Variable plot
+# fviz_pca_var(arrests.pca,
+#              col.var = "contrib", # Control variable color using their contributions to the PC
+#              gradient.cols = c("#70f6ff", "#00AFBB", "#ffd224", "#d8ac00", "#FC4E07", "#a73203"),
+#              repel = TRUE,     # Avoid text overlapping
+#              ggtheme = theme_minimal()
+# )

@@ -763,6 +763,7 @@ program 			define 	NBProblem
 							** Turing test
 							** Bot 68.22% -- 73.02% seed 1011
 							reg v_house lag_r_house lag_v_house lag_rdot_house rat_* if (incl)
+								tab incl
 							fit_nb v_house
 							** ACD 69.96% -- 74.32% seed 1011 -- 1% loss!
 							reg v_house lag_r_house lag_v_house lag_a_house lag_j_house lag_rdot_house rat_* lag_ac*_house lag_ac*_stock lag_m_bond if (incl)
@@ -788,8 +789,31 @@ program 			define 	NBProblem
 							** Conditional ARIMA
 							arima v_house lag_r_house lag_v_house lag_a_house lag_j_house lag_rdot_house rat_* lag_ac*_house lag_acd_stock lag_m_bond , ar(10) ma(4) technique(bhhh)
 							estat aroots
+							arima v_house lag_r_house lag_v_house lag_j_house lag_rdot_house rat_* lag_acd_stock lag_m_bond  , ar(10) ma(4) technique(bhhh)
+							estat aroots
+														
+							** PCA R Data Output
+							cd_nb_stage
+							outsheet lag_r_house lag_v_house lag_j_house lag_rdot_house rat_* lag_acd_stock lag_m_bond using NB_R_PCA_Output.csv, replace comma
+								
+								** Explore correlations from PCA
+								reg lag_r_house lag_rdot_house		//dropping one looses ~24% explanatory value
+								
+								** Base -- 76.67% seed 101
+								reg v_house lag_r_house lag_v_house lag_j_house lag_rdot_house rat_* lag_acd_stock lag_m_bond if (incl)
+								fit_nb v_house
+								** Less dot -- 52.34% seed 101
+								reg v_house lag_v_house lag_j_house lag_rdot_house rat_* lag_acd_stock lag_m_bond if (incl)
+								fit_nb v_house
 							
-							asdf_now_PCS
+							** Excess Housing CAPE Index
+							
+							asdf_CAPE_here
+							
+							** Reproduce Stock CAPE
+							
+							** Gen Housing CAPE
+							
 							
 							
 						** Generate Expansions
