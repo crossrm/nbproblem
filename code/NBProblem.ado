@@ -177,7 +177,7 @@ program 			define 	NBProblem
 				use analysis_data, clear
 				
 				** Summary stats
-				gen div_shr			= dividend / earnings
+				gen double div_shr			= dividend / earnings
 				sum year div_* dividend earnings w_stock if year <= 1983 
 				sum year div_* dividend earnings w_stock if year > 1983 
 								
@@ -225,7 +225,7 @@ program 			define 	NBProblem
 					** Bond
 					** Rogoff
 					** Real bond rate - Rogoff
-					gen rr_bond					= r_bond - r_priceR
+					gen double rr_bond					= r_bond - r_priceR
 					
 					** Rename prices
 					rename snp500 p_stock
@@ -234,7 +234,7 @@ program 			define 	NBProblem
 					** Generate quantities
 					rename house_units q_house	
 					replace q_house 			= q_house / 1000 /1000 			//Billions of units (houses)
-					gen q_stock					= w_stock / p_stock				//billions of (effective) shares
+					gen double q_stock					= w_stock / p_stock				//billions of (effective) shares
 														
 					****************
 					** Bond accretion
@@ -243,49 +243,49 @@ program 			define 	NBProblem
 					** Gen bond price and quantity
 					** Use simple PV approach for change in quantity - Notes 4.18.25 p3, updated and corrected 5.28.25 p1
 					**Set initial price (each period) at $1000 par value
-					gen q_bond 					= w_bond / 1000	* 1000		//millions of "bonds" - $1000 face value each, or billions of dollars
+					gen double q_bond 					= w_bond / 1000	* 1000		//millions of "bonds" - $1000 face value each, or billions of dollars
 					** Gen bond - current period issuance - PV method
 					** Annual data market capitalization size, monthly rates - Use average current and previous year rate 
-					gen r_current				= r_bond
-					gen q_current				= q_bond
+					gen double r_current				= r_bond
+					gen double q_current				= q_bond
 					sort t
 					tsset t
-					gen r_prior					= L12.r_current
-					gen q_prior					= L12.q_current				//millions of "bonds" - $1000 face value each, or billions of dollars
-					gen coupon_prior			= r_prior * 10
-					gen coupon_priorm			= L.r_current * 10
-					gen rate_current			= r_current / 100
+					gen double r_prior					= L12.r_current
+					gen double q_prior					= L12.q_current				//millions of "bonds" - $1000 face value each, or billions of dollars
+					gen double coupon_prior			= r_prior * 10
+					gen double coupon_priorm			= L.r_current * 10
+					gen double rate_current			= r_current / 100
 					** Current value of PRIOR cash flows (prior coupon (r * 10, valued at current rate r)
 					** 9 years (of original 10) remaining, but use 10 for price effect, net of duration
-					gen v_cfl					= coupon_prior  * (1- (1+rate_current )^-10) / rate_current 	//per $1000 bond
-					gen v_cflm					= coupon_priorm * (1- (1+rate_current )^-10) / rate_current 	//per $1000 bond
+					gen double v_cfl					= coupon_prior  * (1- (1+rate_current )^-10) / rate_current 	//per $1000 bond
+					gen double v_cflm					= coupon_priorm * (1- (1+rate_current )^-10) / rate_current 	//per $1000 bond
 					** Value of return of Face value ($1000) (valued at current rate)
-					gen v_future				= 1000 * (1+rate_current )^-10								//per $1000 bond
+					gen double v_future				= 1000 * (1+rate_current )^-10								//per $1000 bond
 					** Gen current price of prior year bonds
-					gen v_total 				= v_cfl + v_future											//per prior year $1000 bond
-					gen v_totalm 				= v_cflm + v_future											//per prior year $1000 bond
+					gen double v_total 				= v_cfl + v_future											//per prior year $1000 bond
+					gen double v_totalm 				= v_cflm + v_future											//per prior year $1000 bond
 					** Current value of all prior period bonds
-					gen v_current				= v_total * q_prior / 1000									//billions of dollars - millions of bonds ($1000 face value)
-					gen v_currentm				= v_totalm * L.q_current / 1000								//billions of dollars - millions of bonds ($1000 face value)
+					gen double v_current				= v_total * q_prior / 1000									//billions of dollars - millions of bonds ($1000 face value)
+					gen double v_currentm				= v_totalm * L.q_current / 1000								//billions of dollars - millions of bonds ($1000 face value)
 					** New issue - total current value (q_bond * 1000), less value of prior issue
-					gen new_issue				= q_bond - v_current 										//billions of dollars - millions of bonds ($1000 face value)
-					gen new_issue_m				= (q_bond- L.q_bond)										//billions of dollars - millions of bonds ($1000 face value)			
+					gen double new_issue				= q_bond - v_current 										//billions of dollars - millions of bonds ($1000 face value)
+					gen double new_issue_m				= (q_bond- L.q_bond)										//billions of dollars - millions of bonds ($1000 face value)			
 										
 					** For accretion
 					** Gen current price of prior year bonds
-					gen p_current				= v_total													//per prior year $1000 bond
-					gen p_currentm				= v_totalm													//per prior year $1000 bond
+					gen double p_current				= v_total													//per prior year $1000 bond
+					gen double p_currentm				= v_totalm													//per prior year $1000 bond
 					
 					** Change in value of prior year outstanding
 					** Capital accretion - Bennet quantity indicator - Cross Fare 2009
 					** Decompose accretion - Notes 5.16.25 p.2 
-					gen p_prior					= 1000
-					gen acc_sup_bond			= new_issue 	* (p_current + p_prior) / 2 				//billions of dollars - millions of bonds ($1000 face value)				
-					gen acc_sup_bondm			= new_issue_m 	* (p_currentm + p_prior) / 2				//billions of dollars - millions of bonds ($1000 face value)	
+					gen double p_prior					= 1000
+					gen double acc_sup_bond			= new_issue 	* (p_current + p_prior) / 2 				//billions of dollars - millions of bonds ($1000 face value)				
+					gen double acc_sup_bondm			= new_issue_m 	* (p_currentm + p_prior) / 2				//billions of dollars - millions of bonds ($1000 face value)	
 					** Use new issue (q' - q) from line 979 above, but reverse sign (q' + q)
 					** Correct 5.29.25 expressed in millions of dollars. 	
-					gen acc_dem_bond			= (p_current - p_prior) 	* (q_bond + v_current) / 2 		// $0.584 x 3460 bonds (in millions of bonds (billions of dollars)) 
-					gen acc_dem_bondm			= (p_currentm - p_prior)	* (q_bond + v_currentm) / 2 	// $0.584 x 3460 bonds (in millions of bonds (billions of dollars)) 
+					gen double acc_dem_bond			= (p_current - p_prior) 	* (q_bond + v_current) / 2 		// $0.584 x 3460 bonds (in millions of bonds (billions of dollars)) 
+					gen double acc_dem_bondm			= (p_currentm - p_prior)	* (q_bond + v_currentm) / 2 	// $0.584 x 3460 bonds (in millions of bonds (billions of dollars)) 
 					
 					** Order
 						order *bond* v_* coupon* rate* *current *prior new*				
@@ -303,18 +303,18 @@ program 			define 	NBProblem
 					****************
 					** Stock accretion
 					****************					
-					gen p_current				= p_stock					// Index value (dollars)
+					gen double p_current				= p_stock					// Index value (dollars)
 					sort t
 					tsset t
-					gen p_prior					= L12.p_stock				// dollars
-					gen q_prior					= L12.q_stock				// billions of shares (units)
-					gen new_issue				= q_stock - q_prior 		// directly calculable by S&P share-weighting // billions of shares (units)
-					gen new_issue_m				= (q_stock - L.q_stock)		// billions of shares (units)			
+					gen double p_prior					= L12.p_stock				// dollars
+					gen double q_prior					= L12.q_stock				// billions of shares (units)
+					gen double new_issue				= q_stock - q_prior 		// directly calculable by S&P share-weighting // billions of shares (units)
+					gen double new_issue_m				= (q_stock - L.q_stock)		// billions of shares (units)			
 					** Decompose accretion - Notes 5.16.25 p.2 
-					gen acc_sup_stock			= new_issue 	* (p_current + p_prior) / 2 					// quantity change * avg price -- billions of dollars
-					gen acc_sup_stockm			= new_issue_m 	* (p_stock + L.p_stock) / 2						// quantity change * avg price -- billions of dollars
-					gen acc_dem_stock			= (p_current - p_prior) 	*  (q_stock + q_prior) / 2 			// price change * avg qty 	   -- billions of dollars
-					gen acc_dem_stockm			= (p_current - L.p_current) *  (q_stock + L.q_stock) / 2 	// price change * avg qty 	   -- billions of dollars
+					gen double acc_sup_stock			= new_issue 	* (p_current + p_prior) / 2 					// quantity change * avg price -- billions of dollars
+					gen double acc_sup_stockm			= new_issue_m 	* (p_stock + L.p_stock) / 2						// quantity change * avg price -- billions of dollars
+					gen double acc_dem_stock			= (p_current - p_prior) 	*  (q_stock + q_prior) / 2 			// price change * avg qty 	   -- billions of dollars
+					gen double acc_dem_stockm			= (p_current - L.p_current) *  (q_stock + L.q_stock) / 2 	// price change * avg qty 	   -- billions of dollars
 					
 					rename new_issue 	ni_stocky
 					rename new_issue_m	ni_stockm
@@ -328,19 +328,19 @@ program 			define 	NBProblem
 					****************
 					** House accretion
 					****************	
-					gen p_current				= p_house
+					gen double p_current				= p_house
 					sort t
 					tsset t
-					gen p_prior					= L12.p_house				// Dollars
-					gen q_prior					= L12.q_house				// Billions of units (houses) [millions 7.1.25]
-					gen new_issue				= q_house - q_prior 		//directly calculable by S&P share-weighting
-					gen new_issue_m				= (q_house - L.q_house)					
+					gen double p_prior					= L12.p_house				// Dollars
+					gen double q_prior					= L12.q_house				// Billions of units (houses) [millions 7.1.25]
+					gen double new_issue				= q_house - q_prior 		//directly calculable by S&P share-weighting
+					gen double new_issue_m				= (q_house - L.q_house)					
 					** Decompose accretion - Notes 5.16.25 p.2 
-					gen acc_sup_house				= new_issue 	* (p_current + p_prior) / 2 			
-					gen acc_sup_housem				= new_issue_m 	* (p_house + L.p_house) / 2
+					gen double acc_sup_house				= new_issue 	* (p_current + p_prior) / 2 			
+					gen double acc_sup_housem				= new_issue_m 	* (p_house + L.p_house) / 2
 					* Use new issue, but reverse sign for average quantity (q' + q)/2
-					gen acc_dem_house				= (p_current - p_prior) 	* (q_house + q_prior)	/ 2 
-					gen acc_dem_housem				= (p_current - p_prior) 	* (q_house + L.q_house)	/ 2 
+					gen double acc_dem_house				= (p_current - p_prior) 	* (q_house + q_prior)	/ 2 
+					gen double acc_dem_housem				= (p_current - p_prior) 	* (q_house + L.q_house)	/ 2 
 					
 					rename new_issue 	ni_housey
 					rename new_issue_m	ni_housem
@@ -348,8 +348,8 @@ program 			define 	NBProblem
 					****************
 					** Price accretion
 					****************	
-					gen acc_dem_price 				= 1
-					gen acc_sup_price				= 1
+					gen double acc_dem_price 				= 1
+					gen double acc_sup_price				= 1
 										
 					order year month t w_* r_* p_* q_* *_current *_prior acc_* ni_* 
 					drop *_prior *_current			
@@ -422,14 +422,14 @@ program 			define 	NBProblem
 				****************
 							
 				** Net accretions
-				gen net_sup_acc 				= acc_sup_bond + acc_sup_stock + acc_sup_house
-				gen net_dem_acc 				= acc_dem_bond + acc_dem_stock + acc_dem_house
-				gen net_acc						= net_sup_acc + net_dem_acc
+				gen double net_sup_acc 				= acc_sup_bond + acc_sup_stock + acc_sup_house
+				gen double net_dem_acc 				= acc_dem_bond + acc_dem_stock + acc_dem_house
+				gen double net_acc					= net_sup_acc + net_dem_acc
 				
 				** Per capita -- $ per person -- ( pop is in 000s , dollar figures are in billions)
 				foreach var of varlist net_* acc_* w_* {
 					
-					gen cap_`var'			= `var' / (pop * 1000) * 1000000 
+					gen double cap_`var'			= `var' / (pop * 1000) * 1000000 
 					
 				} //end loop
 				di "Done with per cap vars."
@@ -442,6 +442,10 @@ program 			define 	NBProblem
 				gen n 						= _n
 				tsset n
 									
+				** Save
+				cd_nb_stage
+				save monthly_temp, replace
+									
 				******************************
 				** N-Body - Combined
 				** 1. Rocket
@@ -450,6 +454,10 @@ program 			define 	NBProblem
 				scalar nb 					= 1
 				if nb == 1 {
 				
+					** Reload
+					cd_nb_stage
+					use monthly_temp, clear
+					
 					**************************
 					** Prep Relative distances
 					**************************
@@ -466,54 +474,54 @@ program 			define 	NBProblem
 						******************						
 						
 						** Velocity
-						gen v_`pri'				= r_`pri' - L.r_`pri' 
-						gen lag_v_`pri'			= L.v_`pri'
+						gen double v_`pri'				= r_`pri' - L.r_`pri' 
+						gen double lag_v_`pri'			= L.v_`pri'
 						
 						** Acceleration
-						gen a_`pri'				= v_`pri' - L.v_`pri' 
-						gen lag_a_`pri'			= L.a_`pri'
+						gen double a_`pri'				= v_`pri' - L.v_`pri' 
+						gen double lag_a_`pri'			= L.a_`pri'
 						
 						** Jolt (Jerk)
-						gen j_`pri'				= a_`pri' - L.a_`pri' 
-						gen lag_j_`pri'			= L.j_`pri'
+						gen double j_`pri'				= a_`pri' - L.a_`pri' 
+						gen double lag_j_`pri'			= L.j_`pri'
 						
 						** Mass
-						gen m_`pri'				= w_`pri'
-						gen lag_m_`pri'			= L.m_`pri'
+						gen double m_`pri'				= w_`pri'
+						gen double lag_m_`pri'			= L.m_`pri'
 						
 						** Accretion
-						gen acd_`pri'			= acc_dem_`pri'
-						gen acs_`pri'			= acc_sup_`pri'
+						gen double acd_`pri'			= acc_dem_`pri'
+						gen double acs_`pri'			= acc_sup_`pri'
 						
 						** Lagged accretion -- 8.4.25 RC
-						gen lag_acd_`pri'			= L.acc_dem_`pri'
-						gen lag_acs_`pri'			= L.acc_sup_`pri'
+						gen double lag_acd_`pri'			= L.acc_dem_`pri'
+						gen double lag_acs_`pri'			= L.acc_sup_`pri'
 						
 						** Mass difference and ratio
 						** Acceleration
-						gen m_diff_`pri'		= lag_m_`pri' - m_`pri'	
-						gen m_dot_`pri'			= 1 + m_diff_`pri' /  m_`pri'
+						gen double m_diff_`pri'			= lag_m_`pri' - m_`pri'	
+						gen double m_dot_`pri'			= 1 + m_diff_`pri' /  m_`pri'
 						** Velocity -- 7.1.25
-						gen m_dot2_`pri'		= 1 + 2 * m_diff_`pri' /  m_`pri'
+						gen double m_dot2_`pri'			= 1 + 2 * m_diff_`pri' /  m_`pri'
 						** Rate -- added 7.1.25
-						gen lag_r_`pri'			= L.r_`pri'
-						gen lag2_r_`pri'		= L2.r_`pri'
-						gen m_dot3_`pri'		= m_dot_`pri'	 / m_dot2_`pri'	
-						gen m_dot3plus_`pri'	= 1 + m_dot3_`pri'	
+						gen double lag_r_`pri'			= L.r_`pri'
+						gen double lag2_r_`pri'			= L2.r_`pri'
+						gen double m_dot3_`pri'			= m_dot_`pri'	 / m_dot2_`pri'	
+						gen double m_dot3plus_`pri'		= 1 + m_dot3_`pri'	
 
 						** Composit mass terms for regression
 						** Acceleration
-						gen acc_ddot_`pri'		= acd_`pri' / m_`pri' / m_dot_`pri'						//added mass divisor 7.1.25
-						gen acc_sdot_`pri'		= acs_`pri' / m_`pri' / m_dot_`pri'						//added mass divisor 7.1.25
-						gen lag_v_dot_`pri'		= lag_v_`pri' * m_diff_`pri' / m_`pri' / m_dot_`pri'	//added mass divisor 7.1.25
-						gen v_dot_`pri'			= v_`pri' * m_diff_`pri' / m_`pri' / m_dot_`pri'		//added mass divisor 7.1.25
+						gen double acc_ddot_`pri'		= acd_`pri' / m_`pri' / m_dot_`pri'						//added mass divisor 7.1.25
+						gen double acc_sdot_`pri'		= acs_`pri' / m_`pri' / m_dot_`pri'						//added mass divisor 7.1.25
+						gen double lag_v_dot_`pri'		= lag_v_`pri' * m_diff_`pri' / m_`pri' / m_dot_`pri'	//added mass divisor 7.1.25
+						gen double v_dot_`pri'			= v_`pri' * m_diff_`pri' / m_`pri' / m_dot_`pri'		//added mass divisor 7.1.25
 						** Velocity -- added 7.1.25
-						gen acc_ddot2_`pri'		= acd_`pri' / m_`pri' / m_dot2_`pri'					//added mass divisor 7.1.25
-						gen acc_sdot2_`pri'		= acs_`pri' / m_`pri' / m_dot2_`pri'					//added mass divisor 7.1.25
-						gen lag_v_dot2_`pri'	= lag_v_`pri' * m_diff_`pri' / m_`pri' / m_dot2_`pri'	//added mass divisor 7.1.25
+						gen double acc_ddot2_`pri'		= acd_`pri' / m_`pri' / m_dot2_`pri'					//added mass divisor 7.1.25
+						gen double acc_sdot2_`pri'		= acs_`pri' / m_`pri' / m_dot2_`pri'					//added mass divisor 7.1.25
+						gen double lag_v_dot2_`pri'		= lag_v_`pri' * m_diff_`pri' / m_`pri' / m_dot2_`pri'	//added mass divisor 7.1.25
 						** Rate -- added 7.1.25
-						gen lag_r_dot_`pri'		= lag_r_`pri' * m_dot3plus_`pri'
-						gen lag2_r_dot_`pri'	= lag2_r_`pri' * m_dot3_`pri'
+						gen double lag_r_dot_`pri'		= lag_r_`pri' * m_dot3plus_`pri'
+						gen double lag2_r_dot_`pri'		= lag2_r_`pri' * m_dot3_`pri'
 												
 					} //end loop
 					di "Done with relative distance loop."
@@ -530,18 +538,18 @@ program 			define 	NBProblem
 							******************
 							
 							** Distance
-							gen d_`sec'_`pri'				= r_`sec' - r_`pri' 
-							gen lag_d_`sec'_`pri'			= L.d_`sec'_`pri'
+							gen double d_`sec'_`pri'				= r_`sec' - r_`pri' 
+							gen double lag_d_`sec'_`pri'			= L.d_`sec'_`pri'
 														
 							** Normed distance
-							gen n_`sec'_`pri'				= abs(d_`sec'_`pri')^3
-							gen lag_n_`sec'_`pri'			= L.n_`sec'_`pri'
+							gen double n_`sec'_`pri'				= abs(d_`sec'_`pri')^3
+							gen double lag_n_`sec'_`pri'			= L.n_`sec'_`pri'
 							
 							** Grav terms for regression
 							** Acceleration
-							gen grav_term_`sec'_`pri'			= lag_m_`sec' / m_dot_`pri' * lag_d_`sec'_`pri' / lag_n_`sec'_`pri'
+							gen double grav_term_`sec'_`pri'			= lag_m_`sec' / m_dot_`pri' * lag_d_`sec'_`pri' / lag_n_`sec'_`pri'
 							** Velocity
-							gen grav_term2_`sec'_`pri'			= lag_m_`sec' / m_dot2_`pri' * lag_d_`sec'_`pri' / lag_n_`sec'_`pri'
+							gen double grav_term2_`sec'_`pri'			= lag_m_`sec' / m_dot2_`pri' * lag_d_`sec'_`pri' / lag_n_`sec'_`pri'
 														
 						} //end loop
 						di "Done with seconary loop for primary: `pri' and sec: `sec'."
@@ -561,11 +569,334 @@ program 			define 	NBProblem
 						order *, alpha
 						order *stock* *bond* *house* *price*
 						order n t year month dt period r_* v_* a_* j_* m_* acc_* d_* n_* grav_* lag_*
-						
+					
+					** Drop outliers
+					** Outliers (data errors)
+					drop if v_house < -0.3
+					drop if a_house < -0.3 | a_house > 0.3
+					drop if j_house < -0.3 | j_house > 0.3
+											
 					** Save
 					cd_nb_stage
 					save arima_data, replace
 														
+					////////////
+					** Acceleration+ (Velocity of r is (intrinsic) real-acceleration of housing wealth)
+					** General rocket + gravity
+					////////////
+					scalar gen_accel = 1
+					if gen_accel == 1 {
+						
+						** Load
+						cd_nb_stage
+						use arima_data, clear
+												
+						***********
+						** House
+						***********
+						
+						** Unconditional ARIMA 
+						arima j_house , ar(1 2 3) ma() 
+						estat aroots
+						arima a_house , ar(1 2 3) ma() technique(bhhh)
+						estat aroots
+						arima v_house , ar(1) ma(1) technique(bhhh)
+						estat aroots
+						arima r_house , ar(1) ma(1) technique(bhhh)
+						estat aroots
+						** Correlogram
+						ac  v_house, ylabels(-.4(.2).6) name(ac_house, replace)
+						//graph save ac_house, replace
+						pac v_house, ylabels(-.4(.2).6) name(pac_house, replace)
+						//graph save pac_house, replace
+						graph combine ac_house pac_house, rows(2) cols(1)
+						
+						** Informed unconditional ARIMA
+						arima v_house , ar(11 12 13) ma() technique(bhhh)
+						estat aroots
+						arima v_house , ar(10) ma(4) technique(bhhh)
+						estat aroots
+												
+						** Initial reg
+						reg v_house grav_term2_stock_house grav_term2_bond_house  ///
+							acc_ddot2_house acc_sdot2_house lag_v_dot2_house //if year >= 1949
+							
+						** Initial arima
+						predict e_house, xb
+						replace e_house 				= a_house - e_house		//Convert to error
+						** Correlogram
+						ac  e_house, ylabels(-.4(.2).6) name(ac_house, replace)
+						//graph save ac_house, replace
+						pac e_house, ylabels(-.4(.2).6) name(pac_house, replace)
+						//graph save pac_house, replace
+						graph combine ac_house pac_house, rows(2) cols(1)
+						drop e_*
+						
+						** Conditional ARIMA
+						arima v_house v_house grav_term2_stock_house grav_term2_bond_house  ///
+							acc_ddot2_house acc_sdot2_house lag_v_dot2_house, ar(10) ma(3) technique(bhhh)
+						estat aroots
+												
+						** Reload
+						cd_nb_stage
+						use arima_data, clear
+						//drop *_price
+												
+						** Keep complete data only for balanced OOS testing
+						** Drop missing jolt observations (4-months) for balanced OOS run
+						global assets "stock bond house"
+						global letters "r v a j"
+						pause on
+						
+						foreach asset of global assets {
+							
+							foreach let of global letters {
+														
+								reg `let'_`asset' lag_r_* lag_v_* lag_j_* lag_m_* lag_acd_* lag_acs_*
+								predict yhat, xb
+								gen complete_data	= (yhat~=.)
+									sum year yhat complete* 
+									*tab year complete_data 
+								drop if yhat==.
+								drop if `let'_house == .
+								drop yhat complete_data
+								
+								** Look
+								*scatter `let'_`asset' year //if  `let'_`asset' < 0.05 &  `let'_`asset' > -0.05
+								
+								*pause
+
+							} //end loop
+							di "Done with letter loop."
+							
+						} //end loop
+						di "Done with asset loop."
+																		
+						** OOS
+						set seed	1011
+						gen randsample			= runiform()
+						sort randsample
+						gen ob					= _n
+						sum ob
+						local holdout			= 0.60
+						local upper				= ceil(r(max) * `holdout')
+						gen incl 				= (ob <= `upper')
+							di "Upper is `upper', holdout is `holdout'."
+							sum ob randsample incl //if year >= 1900
+							tab incl //if year >= 1900
+						replace incl			= (incl==1 ) //& year >= 1900)
+
+						** Initial rocket-grav reg
+						reg v_house grav_term2_stock_house grav_term2_bond_house  ///
+							acc_ddot2_house acc_sdot2_house lag_v_dot2_house if (incl)
+						fit_nb a_house
+						
+						*************************************
+						** Approximations
+						drop *diff*
+						**************************************
+											
+						** Order vars for regressions 
+						order *stock *bond *house
+						order *_r_* *_v_* *_a_* *_j_*
+						rename *_r_dot_* *_rdot_*
+						rename *_v_dot_* *_vdot_*
+						rename *_v_dot2_* *_vdot2_*
+						order *_dot*, last
+						
+						** PCA R Data Output
+						cd_nb_stage
+						outsheet lag_r_* lag_v_* lag_a_* lag_j_* lag_m_* lag_acd_* lag_acs_* lag_rdot_* lag_vdot_* lag_vdot2_* using NB_R_PCA_vOutput.csv, replace comma
+						
+						** Save for turingbot
+						cd_nb_stage
+						save tempm, replace
+						use tempm, clear
+						** Save turingbot
+						drop lag_m_price lag_a*_price *vdot*_price *_r_price
+						order year month *stock* *bond* *house*
+						sort year month
+						order year month a_house lag_r_* lag_v_* lag_a_* lag_j_* lag_m_* lag_acd_* lag_acs_* lag_rdot_* lag_vdot_* lag_vdot2_*
+						keep  v_house lag_r_* lag_v_* lag_a_* lag_j_* lag_m_* lag_acd_* lag_acs_* lag_rdot_* lag_vdot_* lag_vdot2_*
+						foreach var of varlist v_house lag_r_* lag_v_* lag_a_* lag_j_* lag_m_* lag_acd_* lag_acs_* lag_rdot_* lag_vdot_* lag_vdot2_* {
+							
+						replace `var' 				= `var' * 100
+						
+						} //end loop
+						di "Done with rescale loop."
+						
+						** Save
+						cd_nb_stage
+						save turingbot_vdatam, replace
+						use turingbot_vdatam, clear
+						
+						** Reload
+						cd_nb_stage
+						use tempm, clear
+						
+							** Look
+							sort year month
+							order year month m_* 
+							order year month *_bond
+							order year month *_stock
+							drop lag_m_price lag_a*_price *vdot*_price *_r_price
+							
+							** Linear 56.76%
+							reg v_house lag_r_* lag_v_* lag_a_* lag_j_* lag_m_* lag_acd_* lag_acs_* if (incl)
+							fit_nb v_house 
+							
+							** 51.12%
+							reg j_house lag_r_* lag_v_* lag_a_* lag_j_* lag_m_* lag_acd_* lag_acs_* if (incl)
+							fit_nb j_house
+						
+							** Test Turing
+							gen rat_rdot_r_bond_house 					= lag_rdot_bond / lag_rdot_house
+							gen rat_rdot_r_stock_house 					= lag_rdot_stock / lag_rdot_house
+							gen rat_rdot_m_house_house 					= lag_m_house / lag_rdot_house
+							//gen rat_j_rdot_price_bond 				= lag_j_price / lag_rdot_bond
+							//gen rat_j_r_price_house 					= lag_j_price / lag_r_house
+							gen rat_acd_m_bond_bond 					= lag_acd_bond / lag_m_bond
+							gen rat_acs_m_house_bond 					= lag_acs_house / lag_m_bond
+							gen rat_acd_m_house_bond 					= lag_acd_house / lag_m_bond
+							gen rat_a_rdot_house_bond 					= lag_a_house / lag_rdot_bond
+							
+							** Turing test
+							** Bot 68.22% -- 73.02% seed 1011
+							reg v_house lag_r_house lag_v_house lag_rdot_house rat_* if (incl)
+							fit_nb v_house
+							** ACD 69.96% -- 74.32% seed 1011 -- 1% loss!
+							reg v_house lag_r_house lag_v_house lag_a_house lag_j_house lag_rdot_house rat_* lag_ac*_house lag_ac*_stock lag_m_bond if (incl)
+							fit_nb v_house
+							** ACD 69.96% -- 74.32% seed 1011 : 1% loss! -- 75.23% seed 101 : 0% loss!
+							reg v_house lag_r_house lag_v_house lag_a_house lag_j_house lag_rdot_house rat_* lag_ac*_house lag_acd_stock lag_m_bond if (incl)
+							fit_nb v_house
+							** ACD 69.96% -- 74.32% seed 1011 : 1% loss! -- 78.60% seed 101 : 0% loss!
+							reg v_house lag_r_house lag_v_house lag_j_house lag_rdot_house rat_* lag_acd_stock lag_m_bond if (incl)
+							fit_nb v_house
+							
+							** Initial arima
+							predict e_house, xb
+							replace e_house 				= a_house - e_house		//Convert to error
+							** Correlogram
+							ac  e_house, ylabels(-.4(.2).6) name(ac_house, replace)
+							//graph save ac_house, replace
+							pac e_house, ylabels(-.4(.2).6) name(pac_house, replace)
+							//graph save pac_house, replace
+							graph combine ac_house pac_house, rows(2) cols(1)
+							drop e_*
+							
+							** Conditional ARIMA
+							arima v_house lag_r_house lag_v_house lag_a_house lag_j_house lag_rdot_house rat_* lag_ac*_house lag_acd_stock lag_m_bond , ar(10) ma(4) technique(bhhh)
+							estat aroots
+							
+							asdf_now_PCS
+							
+							
+						** Generate Expansions
+						global nams "stock bond house"
+						global namsac "acs acd"
+						pause on
+					
+						** 2nd order  
+						** Rate loop -- a housing is non-linear in lagged r housing
+						foreach nam of global nams {
+							
+							reg a_house c.lag_r_`nam'#c.lag_r_`nam' lag_r_* lag_v_* lag_a_* lag_j_* lag_m_* lag_acd_* lag_acs_* if (incl)
+							** Plot
+							sum lag_r_`nam'
+							quietly margins , at(lag_r_`nam' = (4 (0.1) 8) ) 			
+							marginsplot, recast(line) recastci(rarea)
+							
+							* Fit
+							fit_nb a_house
+							
+							pause
+							
+						} //end loop
+						di "Done with loop expansion check r."
+										
+						** Mass loop -- linear
+						foreach nam of global nams {
+							
+							reg a_house c.lag_m_`nam'#c.lag_m_`nam' lag_r_* lag_v_* lag_a_* lag_j_* lag_m_* lag_acd_* lag_acs_* if (incl)
+							** Plot
+							qui margins , at(lag_m_`nam' = (1 (1000) 50000) ) 			
+							marginsplot, recast(line) recastci(rarea)
+							
+							* Fit
+							fit_nb a_house
+							
+							sum lag_m_`nam'
+							
+							//pause
+							
+						} //end loop
+						di "Done with loop expansion check m."
+							
+						** Acc loop
+						** acs_house (U)
+						foreach nam of global nams {
+							
+							foreach nac of global namsac {
+									
+									di "Beginnin nam: `nam', nac: `nac'."
+								
+								reg a_house c.lag_`nac'_`nam'#c.lag_`nac'_`nam' lag_r_* lag_v_* lag_a_* lag_j_* lag_m_* lag_acd_* lag_acs_* if (incl)
+								
+								** Plot
+								quietly margins , at(lag_`nac'_`nam' = (-10000 (1000) 50000) ) 			
+								marginsplot, recast(line) recastci(rarea)
+								
+								* Fit
+								fit_nb a_house
+								
+								sum lag_`nac'_`nam'
+								
+								//pause
+							
+							} //end loop ac
+							di "Done with AC loop."
+							
+						} //end loop
+						di "Done with loop expansion check acs."
+											
+							** 2nd order OOS
+							reg a_house c.lag_acs_house#c.lag_acs_house lag_r_* lag_v_* lag_a_* lag_j_* lag_m_* lag_acd_* lag_acs_* if (incl)
+							fit_nb a_house
+							
+						asdf_nonlin					
+							
+							** Simple
+							** Distance
+							reg a_house lag_d_stock_house c.lag_d_bond_house##c.lag_d_bond_house##c.lag_d_bond_house if (incl)
+							fit_nb a_house
+							** Velocity
+							reg a_house lag_v_house if (incl)
+							fit_nb a_house
+							reg a_house c.lag_v_house##c.lag_v_house if (incl)
+							fit_nb a_house
+						
+						***********
+						** SUR
+						***********
+						** Initial reg
+						reg a_stock grav_term_bond_stock grav_term_house_stock  	///
+							acc_ddot_stock acc_sdot_stock lag_v_dot_stock if year >= 1981
+						reg a_bond grav_term_stock_bond grav_term_house_bond  		///
+							acc_ddot_bond acc_sdot_bond lag_v_dot_bond if year >= 1981	
+						reg a_house grav_term_stock_house grav_term_bond_house  	///
+							acc_ddot_house acc_sdot_house lag_v_dot_house if year >= 1981
+						** SUR
+						sureg (a_stock grav_term_bond_stock grav_term_house_stock  	///
+							acc_ddot_stock acc_sdot_stock lag_v_dot_stock) 			///
+							(a_bond grav_term_stock_bond grav_term_house_bond  		///
+							acc_ddot_bond acc_sdot_bond lag_v_dot_bond) 			///
+							(a_house grav_term_stock_house grav_term_bond_house 	///
+							acc_ddot_house acc_sdot_house lag_v_dot_house) if year >= 1981
+						
+					} //end if
+					di "Done with Acceleration+."
+				
 					////////////
 					** Acceleration
 					** General rocket + gravity
@@ -581,10 +912,26 @@ program 			define 	NBProblem
 						** House
 						***********
 						
+						** Unconditional ARIMA 
+						arima j_house , ar(1 2 3) ma() 
+						estat aroots
+						arima a_house , ar(1 2 3) ma() technique(bhhh)
+						estat aroots
+						arima v_house , ar(1) ma(1) technique(bhhh)
+						estat aroots
+						arima r_house , ar(1) ma(1) technique(bhhh)
+						estat aroots
+						** Correlogram
+						ac  a_house, ylabels(-.4(.2).6) name(ac_house, replace)
+						//graph save ac_house, replace
+						pac a_house, ylabels(-.4(.2).6) name(pac_house, replace)
+						//graph save pac_house, replace
+						graph combine ac_house pac_house, rows(2) cols(1)
+						
 						** Initial reg
 						reg a_house grav_term_stock_house grav_term_bond_house  ///
-							acc_ddot_house acc_sdot_house lag_v_dot_house if year >= 1981
-							
+							acc_ddot_house acc_sdot_house lag_v_dot_house //if year >= 1949
+													
 						** Initial arima
 						predict e_house, xb
 						replace e_house 				= a_house - e_house		//Convert to error
@@ -596,37 +943,223 @@ program 			define 	NBProblem
 						graph combine ac_house pac_house, rows(2) cols(1)
 						drop e_*
 						
-						** ARIMA
-						arima a_house grav_term_stock_house grav_term_bond_house  ///
-							acc_ddot_house acc_sdot_house lag_v_dot_house if year >= 1981, ar(1) ma() 
-						estat aroots	
-						arima a_house grav_term_stock_house grav_term_bond_house  ///
-							acc_ddot_house acc_sdot_house lag_v_dot_house if year >= 1981, ar() ma(1) 
-						estat aroots	
-						arima a_house grav_term_stock_house grav_term_bond_house  ///
-						acc_ddot_house acc_sdot_house lag_v_dot_house if year >= 1981, ar(1) ma(1) 
-						estat aroots	
+						** Reload
+						cd_nb_stage
+						use arima_data, clear
+						//drop *_price
+												
+						** Keep complete data only for balanced OOS testing
+						** Drop missing jolt observations (4-months) for balanced OOS run
+						global assets "stock bond house"
+						global letters "r v a j"
+						pause on
 						
-						** Net v_dot term
-						gen net_a_house			= a_house - 4.4 * v_dot_house
-						reg net_a_house grav_term_stock_house grav_term_bond_house  ///
-							acc_ddot_house acc_sdot_house if year >= 1981
+						foreach asset of global assets {
 							
-						** Initial arima
-						predict e_house, xb
-						replace e_house 				= a_house - e_house		//Convert to error
-						** Correlogram
-						ac  e_house, ylabels(-.4(.2).6) name(ac_house, replace)
-						//graph save ac_house, replace
-						pac e_house, ylabels(-.4(.2).6) name(pac_house, replace)
-						//graph save pac_house, replace
-						graph combine ac_house pac_house, rows(2) cols(1)
-						drop e_*	
+							foreach let of global letters {
+														
+								reg `let'_`asset' lag_r_* lag_v_* lag_j_* lag_m_* lag_acd_* lag_acs_*
+								predict yhat, xb
+								gen complete_data	= (yhat~=.)
+									sum year yhat complete* 
+									*tab year complete_data 
+								drop if yhat==.
+								drop if `let'_house == .
+								drop yhat complete_data
+								
+								** Look
+								*scatter `let'_`asset' year //if  `let'_`asset' < 0.05 &  `let'_`asset' > -0.05
+								
+								*pause
+
+							} //end loop
+							di "Done with letter loop."
 							
-						** ARIMA
-						arima net_a_house grav_term_stock_house grav_term_bond_house  ///
-							acc_ddot_house acc_sdot_house if year >= 1981, ar(1) ma() 
-						estat aroots	
+						} //end loop
+						di "Done with asset loop."
+																		
+						** OOS
+						set seed	10111
+						gen randsample			= runiform()
+						sort randsample
+						gen ob					= _n
+						sum ob
+						local holdout			= 0.60
+						local upper				= ceil(r(max) * `holdout')
+						gen incl 				= (ob <= `upper')
+							di "Upper is `upper', holdout is `holdout'."
+							sum ob randsample incl //if year >= 1900
+							tab incl //if year >= 1900
+						replace incl			= (incl==1 ) //& year >= 1900)
+
+						** Initial rocket-grav reg
+						reg a_house grav_term_stock_house grav_term_bond_house  ///
+							acc_ddot_house acc_sdot_house lag_v_dot_house if (incl)
+						fit_nb a_house
+						
+						*************************************
+						** Approximations
+						drop *diff*
+						**************************************
+											
+						** Order vars for regressions 
+						order *stock *bond *house
+						order *_r_* *_v_* *_a_* *_j_*
+						rename *_r_dot_* *_rdot_*
+						rename *_v_dot_* *_vdot_*
+						rename *_v_dot2_* *_vdot2_*
+						order *_dot*, last
+						
+						** PCA R Data Output
+						cd_nb_stage
+						outsheet lag_r_* lag_v_* lag_a_* lag_j_* lag_m_* lag_acd_* lag_acs_* lag_rdot_* lag_vdot_* lag_vdot2_* using NB_R_PCA_Output.csv, replace comma
+						
+						** Save for turingbot
+						cd_nb_stage
+						save tempm, replace
+						use tempm, clear
+						** Save turingbot
+						drop lag_m_price lag_a*_price *vdot*_price *_r_price
+						order year month *stock* *bond* *house*
+						sort year month
+						order year month a_house lag_r_* lag_v_* lag_a_* lag_j_* lag_m_* lag_acd_* lag_acs_* lag_rdot_* lag_vdot_* lag_vdot2_*
+						keep  a_house lag_r_* lag_v_* lag_a_* lag_j_* lag_m_* lag_acd_* lag_acs_* lag_rdot_* lag_vdot_* lag_vdot2_*
+						foreach var of varlist a_house lag_r_* lag_v_* lag_a_* lag_j_* lag_m_* lag_acd_* lag_acs_* lag_rdot_* lag_vdot_* lag_vdot2_* {
+							
+						replace `var' 				= `var' * 100
+						
+						} //end loop
+						di "Done with rescale loop."
+						
+						** Save
+						cd_nb_stage
+						save turingbot_datam, replace
+						use turingbot_datam, clear
+						
+						** Reload
+						cd_nb_stage
+						use tempm, clear
+						
+							** Look
+							sort year month
+							order year month m_* 
+							order year month *_bond
+							order year month *_stock
+							drop lag_m_price lag_a*_price *vdot*_price *_r_price
+							
+							** Linear -- 52.28%
+							reg a_house lag_r_*  lag_v_* lag_a_* lag_j_* lag_m_* lag_acd_* lag_acs_* lag_rdot_* lag_vdot_* lag_vdot2_* if (incl)
+							fit_nb a_house 
+									
+							** 51.23%
+							reg v_house lag_r_* lag_v_* lag_a_* lag_j_* lag_m_* lag_acd_* lag_acs_* if (incl)
+							fit_nb v_house 
+							
+							** 38.66%
+							reg r_house lag_r_stock lag_r_bond lag_v_* lag_a_* lag_j_* lag_m_* lag_acd_* lag_acs_* if (incl)
+							fit_nb r_house 
+							
+							** 51.12%
+							reg j_house lag_r_* lag_v_* lag_a_* lag_j_* lag_m_* lag_acd_* lag_acs_* if (incl)
+							fit_nb j_house
+						
+							** Test Expansion
+							** larger -- 46.18% loss 1981, 45.3% 1949, 12.62% 1900
+							reg a_house lag_r_bond lag_r_stock lag_r_house c.lag_m_stock#c.lag_m_stock lag_m_bond c.lag_m_house#c.lag_m_house c.lag_acd_stock#c.lag_acd_stock c.lag_acs_stock#c.lag_acs_stock lag_acd_bond ///
+								lag_acs_bond c.lag_acd_house##c.lag_acd_house c.lag_acs_house#c.lag_acs_house if (incl)
+							fit_nb a_house
+							** smaller -- 41.19% loss 1981, 45.1% 1949, 14.65% 1900
+							reg a_house lag_r_bond lag_r_stock lag_r_house lag_m_stock lag_m_bond lag_m_house lag_acd_stock c.lag_acs_stock#c.lag_acs_stock lag_acd_bond ///
+								lag_acs_bond c.lag_acd_house##c.lag_acd_house c.lag_acs_house#c.lag_acs_house if (incl)
+							fit_nb a_house
+						
+						** Generate Expansions
+						global nams "stock bond house"
+						global namsac "acs acd"
+						pause on
+					
+						** 2nd order  
+						** Rate loop -- a housing is non-linear in lagged r housing
+						foreach nam of global nams {
+							
+							reg a_house c.lag_r_`nam'#c.lag_r_`nam' lag_r_* lag_v_* lag_a_* lag_j_* lag_m_* lag_acd_* lag_acs_* if (incl)
+							** Plot
+							sum lag_r_`nam'
+							quietly margins , at(lag_r_`nam' = (4 (0.1) 8) ) 			
+							marginsplot, recast(line) recastci(rarea)
+							
+							* Fit
+							fit_nb a_house
+							
+							pause
+							
+						} //end loop
+						di "Done with loop expansion check r."
+										
+						** Mass loop -- linear
+						foreach nam of global nams {
+							
+							reg a_house c.lag_m_`nam'#c.lag_m_`nam' lag_r_* lag_v_* lag_a_* lag_j_* lag_m_* lag_acd_* lag_acs_* if (incl)
+							** Plot
+							qui margins , at(lag_m_`nam' = (1 (1000) 50000) ) 			
+							marginsplot, recast(line) recastci(rarea)
+							
+							* Fit
+							fit_nb a_house
+							
+							sum lag_m_`nam'
+							
+							//pause
+							
+						} //end loop
+						di "Done with loop expansion check m."
+							
+						** Acc loop
+						** acs_house (U)
+						foreach nam of global nams {
+							
+							foreach nac of global namsac {
+									
+									di "Beginnin nam: `nam', nac: `nac'."
+								
+								reg a_house c.lag_`nac'_`nam'#c.lag_`nac'_`nam' lag_r_* lag_v_* lag_a_* lag_j_* lag_m_* lag_acd_* lag_acs_* if (incl)
+								
+								** Plot
+								quietly margins , at(lag_`nac'_`nam' = (-10000 (1000) 50000) ) 			
+								marginsplot, recast(line) recastci(rarea)
+								
+								* Fit
+								fit_nb a_house
+								
+								sum lag_`nac'_`nam'
+								
+								//pause
+							
+							} //end loop ac
+							di "Done with AC loop."
+							
+						} //end loop
+						di "Done with loop expansion check acs."
+											
+							** 2nd order OOS
+							reg a_house c.lag_acs_house#c.lag_acs_house lag_r_* lag_v_* lag_a_* lag_j_* lag_m_* lag_acd_* lag_acs_* if (incl)
+							fit_nb a_house
+							
+						asdf_nonlin					
+							
+							** Simple
+							** Distance
+							reg a_house lag_d_stock_house c.lag_d_bond_house##c.lag_d_bond_house##c.lag_d_bond_house if (incl)
+							fit_nb a_house
+							** Velocity
+							reg a_house lag_v_house if (incl)
+							fit_nb a_house
+							reg a_house c.lag_v_house##c.lag_v_house if (incl)
+							fit_nb a_house
+							
+										
+										
+
 																											
 						***********
 						** Stock
@@ -653,7 +1186,7 @@ program 			define 	NBProblem
 						estat aroots	
 						
 						** Net v_dot term
-						gen net_a_stock			= a_stock - 4.0 * v_dot_stock
+						gen double net_a_stock			= a_stock - 4.0 * v_dot_stock
 						reg net_a_stock grav_term_bond_stock grav_term_house_stock  ///
 							acc_ddot_stock acc_sdot_stock if year >= 1981
 						
@@ -701,7 +1234,7 @@ program 			define 	NBProblem
 						estat aroots	
 						
 						** Net v_dot term
-						gen net_a_bond			= a_bond - 7.2 * v_dot_bond
+						gen double net_a_bond			= a_bond - 7.2 * v_dot_bond
 						reg net_a_bond grav_term_stock_bond grav_term_house_bond  ///
 							acc_ddot_bond acc_sdot_bond if year >= 1981
 							
@@ -841,7 +1374,7 @@ program 			define 	NBProblem
 					** Rate r
 					** General rocket + gravity
 					////////////
-					scalar gen_rate = 1
+					scalar gen_rate = 1111
 					if gen_rate == 1 {
 						
 						** Load
@@ -850,8 +1383,8 @@ program 			define 	NBProblem
 						
 						** Save turingbot
 						order *stock* *bond* *house*
-						order year r_* v_* a_* lag_r_* lag_v_* lag_a_* lag_m_* lag_acd_* lag_acs_*
-						keep year r_* v_* a_* lag_r_* lag_v_* lag_a_* lag_m_* lag_acd_* lag_acs_*
+						order year r_* v_* a_* j_* lag_r_* lag_v_* lag_a_* lag_j_* lag_m_* lag_acd_* lag_acs_*
+						keep year r_* v_* a_* j_* lag_r_* lag_v_* lag_a_* lag_j_* lag_m_* lag_acd_* lag_acs_*
 						drop *dot*
 						drop *price*
 						drop if lag_m_stock == .
@@ -1523,22 +2056,22 @@ program 			define 	NBProblem
 						******************
 						
 						** Velocity
-						gen v_`pri'				= r_`pri' - L.r_`pri' 
-						gen lag_v_`pri'			= L.v_`pri'
+						gen double v_`pri'				= r_`pri' - L.r_`pri' 
+						gen double lag_v_`pri'			= L.v_`pri'
 						
 						** Acceleration
-						gen a_`pri'				= v_`pri' - L.v_`pri' 
-						gen lag_a_`pri'			= L.a_`pri'
+						gen double a_`pri'				= v_`pri' - L.v_`pri' 
+						gen double lag_a_`pri'			= L.a_`pri'
 						
 						** Jolt (Jerk)
-						gen j_`pri'				= a_`pri' - L.a_`pri' 
-						gen lag_j_`pri'			= L.j_`pri'
+						gen double j_`pri'				= a_`pri' - L.a_`pri' 
+						gen double lag_j_`pri'			= L.j_`pri'
 						
 						** Mass
-						gen lag_w_`pri'			= L.w_`pri'
+						gen double lag_w_`pri'			= L.w_`pri'
 						
 						** Ablation
-						//gen ab_`pri'			= ni_`pri'
+						//gen double ab_`pri'			= ni_`pri'
 							
 						******************
 						** Rocket variables
@@ -1546,14 +2079,14 @@ program 			define 	NBProblem
 						******************
 						
 						** Percent change in mass - ln (m1 / m0)
-						//gen mdot_`pri'			= ln(F1.w_`pri' / w_`pri')  // this is ln (m0 / m1)
-						//gen mdotinv_`pri'		= mdot_`pri' ^ (-1)			// this is ln (m1 / m0)
+						//gen double mdot_`pri'			= ln(F1.w_`pri' / w_`pri')  // this is ln (m0 / m1)
+						//gen double mdotinv_`pri'		= mdot_`pri' ^ (-1)			// this is ln (m1 / m0)
 						
 						** Lagged values for rocket
-						//gen lag_mdot_`pri'		= L.mdotinv_`pri'
+						//gen double lag_mdot_`pri'		= L.mdotinv_`pri'
 						
 						** Ejected velocity u - rocket
-						//gen u_`pri'				= mdot_`pri' * F1.a_`pri' + v_`pri'
+						//gen double u_`pri'				= mdot_`pri' * F1.a_`pri' + v_`pri'
 						
 						******************
 						** Rocket variables
@@ -1565,14 +2098,14 @@ program 			define 	NBProblem
 						** Percent change in mass - ln (m1 / m0)
 						** Assumes change in mass is mass ablation/accretion -- but only some of the mass is ablating, 
 						**   A portion is just disappearing (price change with no quantity change. Where does it go?
-						gen lnm_`pri'			= ln(w_`pri' / F1.w_`pri' )  // this is ln (m1 / m0)
-						gen fm_`pri'			= 1 - lnm_`pri' ^ (-1)			
-						gen fminv_`pri'			= fm_`pri' ^ (-1)			
-						gen int_`pri'			= lag_v_`pri' * fminv_`pri'
+						gen double lnm_`pri'			= ln(w_`pri' / F1.w_`pri' )  // this is ln (m1 / m0)
+						gen double fm_`pri'			= 1 - lnm_`pri' ^ (-1)			
+						gen double fminv_`pri'			= fm_`pri' ^ (-1)			
+						gen double int_`pri'			= lag_v_`pri' * fminv_`pri'
 											
 						** Ejected velocity u - rocket
-						gen u_`pri'				= F1.v_`pri' + a_`pri'  * fm_`pri'
-						gen indu_`pri'			= w_`pri' > F1.w_`pri'
+						gen double u_`pri'				= F1.v_`pri' + a_`pri'  * fm_`pri'
+						gen double indu_`pri'			= w_`pri' > F1.w_`pri'
 						
 						** Secondary
 						foreach sec of global nam  {
@@ -1585,16 +2118,16 @@ program 			define 	NBProblem
 							******************
 							
 							** Distance
-							gen d_`sec'_`pri'				= r_`sec' - r_`pri' 
-							gen lag_d_`sec'_`pri'			= L.d_`sec'_`pri'
+							gen double d_`sec'_`pri'				= r_`sec' - r_`pri' 
+							gen double lag_d_`sec'_`pri'			= L.d_`sec'_`pri'
 														
 							** Normed distance
-							gen n_`sec'_`pri'				= abs(d_`sec'_`pri')^3
-							gen lag_n_`sec'_`pri'			= L.n_`sec'_`pri'
+							gen double n_`sec'_`pri'				= abs(d_`sec'_`pri')^3
+							gen double lag_n_`sec'_`pri'			= L.n_`sec'_`pri'
 							
 							** Inververse normed distance
-							gen in_`sec'_`pri'				= 1/n_`sec'_`pri'
-							gen lag_in_`sec'_`pri'			= L.in_`sec'_`pri'
+							gen double in_`sec'_`pri'				= 1/n_`sec'_`pri'
+							gen double lag_in_`sec'_`pri'			= L.in_`sec'_`pri'
 
 							******************
 							** Rocket variables
@@ -1602,10 +2135,10 @@ program 			define 	NBProblem
 							******************
 
 							** Mass-distance
-							gen md_`pri'_`sec'				= w_`sec' * d_`sec'_`pri'
+							gen double md_`pri'_`sec'				= w_`sec' * d_`sec'_`pri'
 										
 							** Linear term
-							gen c_`sec'_`pri'				= w_`sec' * d_`sec'_`pri' * in_`sec'_`pri'
+							gen double c_`sec'_`pri'				= w_`sec' * d_`sec'_`pri' * in_`sec'_`pri'
 										
 						} //end loop
 						di "Done with seconary loop for primary: `pri'."
@@ -2120,14 +2653,14 @@ program 			define 	NBProblem
 					sum year month t w_* r_* p_* q_* acc_* ni_* if year>=1948
 				
 				** Net accretions
-				gen net_sup_acc 				= acc_sup_bond + acc_sup_stock + acc_sup_house
-				gen net_dem_acc 				= acc_dem_bond + acc_dem_stock + acc_dem_house
-				gen net_acc						= net_sup_acc + net_dem_acc
+				gen double net_sup_acc 				= acc_sup_bond + acc_sup_stock + acc_sup_house
+				gen double net_dem_acc 				= acc_dem_bond + acc_dem_stock + acc_dem_house
+				gen double net_acc						= net_sup_acc + net_dem_acc
 				
 				** Per capita -- $ per person -- ( pop is in 000s , dollar figures are in billions)
 				foreach var of varlist net_* acc_* w_* {
 					
-					gen cap_`var'			= `var' / (pop * 1000) * 1000000 
+					gen double cap_`var'			= `var' / (pop * 1000) * 1000000 
 					
 				} //end loop
 				di "Done with per cap vars."
@@ -2164,54 +2697,54 @@ program 			define 	NBProblem
 						******************						
 						
 						** Velocity
-						gen v_`pri'				= r_`pri' - L.r_`pri' 
-						gen lag_v_`pri'			= L.v_`pri'
+						gen double v_`pri'				= r_`pri' - L.r_`pri' 
+						gen double lag_v_`pri'			= L.v_`pri'
 						
 						** Acceleration
-						gen a_`pri'				= v_`pri' - L.v_`pri' 
-						gen lag_a_`pri'			= L.a_`pri'
+						gen double a_`pri'				= v_`pri' - L.v_`pri' 
+						gen double lag_a_`pri'			= L.a_`pri'
 						
 						** Jolt (Jerk)
-						gen j_`pri'				= a_`pri' - L.a_`pri' 
-						gen lag_j_`pri'			= L.j_`pri'
+						gen double j_`pri'				= a_`pri' - L.a_`pri' 
+						gen double lag_j_`pri'			= L.j_`pri'
 						
 						** Mass
-						gen m_`pri'				= w_`pri'
-						gen lag_m_`pri'			= L.m_`pri'
+						gen double m_`pri'				= w_`pri'
+						gen double lag_m_`pri'			= L.m_`pri'
 						
 						** Accretion
-						gen acd_`pri'			= acc_dem_`pri'
-						gen acs_`pri'			= acc_sup_`pri'
+						gen double acd_`pri'			= acc_dem_`pri'
+						gen double acs_`pri'			= acc_sup_`pri'
 						
 						** Lagged accretion -- 8.4.25 RC
-						gen lag_acd_`pri'			= L.acc_dem_`pri'
-						gen lag_acs_`pri'			= L.acc_sup_`pri'
+						gen double lag_acd_`pri'			= L.acc_dem_`pri'
+						gen double lag_acs_`pri'			= L.acc_sup_`pri'
 						
 						** Mass difference and ratio
 						** Acceleration
-						gen m_diff_`pri'		= lag_m_`pri' - m_`pri'	
-						gen m_dot_`pri'			= 1 + m_diff_`pri' /  m_`pri'
+						gen double m_diff_`pri'		= lag_m_`pri' - m_`pri'	
+						gen double m_dot_`pri'			= 1 + m_diff_`pri' /  m_`pri'
 						** Velocity -- 7.1.25
-						gen m_dot2_`pri'		= 1 + 2 * m_diff_`pri' /  m_`pri'
+						gen double m_dot2_`pri'		= 1 + 2 * m_diff_`pri' /  m_`pri'
 						** Rate -- added 7.1.25
-						gen lag_r_`pri'			= L.r_`pri'
-						gen lag2_r_`pri'		= L2.r_`pri'
-						gen m_dot3_`pri'		= m_dot_`pri'	 / m_dot2_`pri'	
-						gen m_dot3plus_`pri'	= 1 + m_dot3_`pri'	
+						gen double lag_r_`pri'			= L.r_`pri'
+						gen double lag2_r_`pri'		= L2.r_`pri'
+						gen double m_dot3_`pri'		= m_dot_`pri'	 / m_dot2_`pri'	
+						gen double m_dot3plus_`pri'	= 1 + m_dot3_`pri'	
 
 						** Composit mass terms for regression
 						** Acceleration
-						gen acc_ddot_`pri'		= acd_`pri' / m_`pri' / m_dot_`pri'						//added mass divisor 7.1.25
-						gen acc_sdot_`pri'		= acs_`pri' / m_`pri' / m_dot_`pri'						//added mass divisor 7.1.25
-						gen lag_v_dot_`pri'		= lag_v_`pri' * m_diff_`pri' / m_`pri' / m_dot_`pri'	//added mass divisor 7.1.25
-						gen v_dot_`pri'			= v_`pri' * m_diff_`pri' / m_`pri' / m_dot_`pri'		//added mass divisor 7.1.25
+						gen double acc_ddot_`pri'		= acd_`pri' / m_`pri' / m_dot_`pri'						//added mass divisor 7.1.25
+						gen double acc_sdot_`pri'		= acs_`pri' / m_`pri' / m_dot_`pri'						//added mass divisor 7.1.25
+						gen double lag_v_dot_`pri'		= lag_v_`pri' * m_diff_`pri' / m_`pri' / m_dot_`pri'	//added mass divisor 7.1.25
+						gen double v_dot_`pri'			= v_`pri' * m_diff_`pri' / m_`pri' / m_dot_`pri'		//added mass divisor 7.1.25
 						** Velocity -- added 7.1.25
-						gen acc_ddot2_`pri'		= acd_`pri' / m_`pri' / m_dot2_`pri'					//added mass divisor 7.1.25
-						gen acc_sdot2_`pri'		= acs_`pri' / m_`pri' / m_dot2_`pri'					//added mass divisor 7.1.25
-						gen lag_v_dot2_`pri'	= lag_v_`pri' * m_diff_`pri' / m_`pri' / m_dot2_`pri'	//added mass divisor 7.1.25
+						gen double acc_ddot2_`pri'		= acd_`pri' / m_`pri' / m_dot2_`pri'					//added mass divisor 7.1.25
+						gen double acc_sdot2_`pri'		= acs_`pri' / m_`pri' / m_dot2_`pri'					//added mass divisor 7.1.25
+						gen double lag_v_dot2_`pri'	= lag_v_`pri' * m_diff_`pri' / m_`pri' / m_dot2_`pri'	//added mass divisor 7.1.25
 						** Rate -- added 7.1.25
-						gen lag_r_dot_`pri'		= lag_r_`pri' * m_dot3plus_`pri'
-						gen lag2_r_dot_`pri'	= lag2_r_`pri' * m_dot3_`pri'
+						gen double lag_r_dot_`pri'		= lag_r_`pri' * m_dot3plus_`pri'
+						gen double lag2_r_dot_`pri'	= lag2_r_`pri' * m_dot3_`pri'
 												
 					} //end loop
 					di "Done with relative distance loop."
@@ -2228,18 +2761,18 @@ program 			define 	NBProblem
 							******************
 							
 							** Distance
-							gen d_`sec'_`pri'				= r_`sec' - r_`pri' 
-							gen lag_d_`sec'_`pri'			= L.d_`sec'_`pri'
+							gen double d_`sec'_`pri'				= r_`sec' - r_`pri' 
+							gen double lag_d_`sec'_`pri'			= L.d_`sec'_`pri'
 														
 							** Normed distance
-							gen n_`sec'_`pri'				= abs(d_`sec'_`pri')^3
-							gen lag_n_`sec'_`pri'			= L.n_`sec'_`pri'
+							gen double n_`sec'_`pri'				= abs(d_`sec'_`pri')^3
+							gen double lag_n_`sec'_`pri'			= L.n_`sec'_`pri'
 							
 							** Grav terms for regression
 							** Acceleration
-							gen grav_term_`sec'_`pri'			= lag_m_`sec' / m_dot_`pri' * lag_d_`sec'_`pri' / lag_n_`sec'_`pri'
+							gen double grav_term_`sec'_`pri'			= lag_m_`sec' / m_dot_`pri' * lag_d_`sec'_`pri' / lag_n_`sec'_`pri'
 							** Velocity
-							gen grav_term2_`sec'_`pri'			= lag_m_`sec' / m_dot2_`pri' * lag_d_`sec'_`pri' / lag_n_`sec'_`pri'
+							gen double grav_term2_`sec'_`pri'			= lag_m_`sec' / m_dot2_`pri' * lag_d_`sec'_`pri' / lag_n_`sec'_`pri'
 														
 						} //end loop
 						di "Done with seconary loop for primary: `pri' and sec: `sec'."
@@ -2306,7 +2839,7 @@ program 			define 	NBProblem
 						estat aroots	
 						
 						** Net v_dot term
-						gen net_a_house			= a_house - 4.4 * v_dot_house
+						gen double net_a_house			= a_house - 4.4 * v_dot_house
 						reg net_a_house grav_term_stock_house grav_term_bond_house  ///
 							acc_ddot_house acc_sdot_house if year >= 1981
 							
@@ -2351,7 +2884,7 @@ program 			define 	NBProblem
 						estat aroots	
 						
 						** Net v_dot term
-						gen net_a_stock			= a_stock - 4.0 * v_dot_stock
+						gen double net_a_stock			= a_stock - 4.0 * v_dot_stock
 						reg net_a_stock grav_term_bond_stock grav_term_house_stock  ///
 							acc_ddot_stock acc_sdot_stock if year >= 1981
 						
@@ -2399,7 +2932,7 @@ program 			define 	NBProblem
 						estat aroots	
 						
 						** Net v_dot term
-						gen net_a_bond			= a_bond - 7.2 * v_dot_bond
+						gen double net_a_bond			= a_bond - 7.2 * v_dot_bond
 						reg net_a_bond grav_term_stock_bond grav_term_house_bond  ///
 							acc_ddot_bond acc_sdot_bond if year >= 1981
 							
@@ -2602,7 +3135,7 @@ program 			define 	NBProblem
 											
 						** Approximations
 						set seed	101
-						gen randsample			= runiform()
+						gen double randsample			= runiform()
 						sort randsample
 						gen ob					= _n
 						sum ob
@@ -3218,22 +3751,22 @@ program 			define 	NBProblem
 						******************
 						
 						** Velocity
-						gen v_`pri'				= r_`pri' - L.r_`pri' 
-						gen lag_v_`pri'			= L.v_`pri'
+						gen double v_`pri'				= r_`pri' - L.r_`pri' 
+						gen double lag_v_`pri'			= L.v_`pri'
 						
 						** Acceleration
-						gen a_`pri'				= v_`pri' - L.v_`pri' 
-						gen lag_a_`pri'			= L.a_`pri'
+						gen double a_`pri'				= v_`pri' - L.v_`pri' 
+						gen double lag_a_`pri'			= L.a_`pri'
 						
 						** Jolt (Jerk)
-						gen j_`pri'				= a_`pri' - L.a_`pri' 
-						gen lag_j_`pri'			= L.j_`pri'
+						gen double j_`pri'				= a_`pri' - L.a_`pri' 
+						gen double lag_j_`pri'			= L.j_`pri'
 						
 						** Mass
-						gen lag_w_`pri'			= L.w_`pri'
+						gen double lag_w_`pri'			= L.w_`pri'
 						
 						** Ablation
-						//gen ab_`pri'			= ni_`pri'
+						//gen double ab_`pri'			= ni_`pri'
 							
 						******************
 						** Rocket variables
@@ -3241,14 +3774,14 @@ program 			define 	NBProblem
 						******************
 						
 						** Percent change in mass - ln (m1 / m0)
-						//gen mdot_`pri'			= ln(F1.w_`pri' / w_`pri')  // this is ln (m0 / m1)
-						//gen mdotinv_`pri'		= mdot_`pri' ^ (-1)			// this is ln (m1 / m0)
+						//gen double mdot_`pri'			= ln(F1.w_`pri' / w_`pri')  // this is ln (m0 / m1)
+						//gen double mdotinv_`pri'		= mdot_`pri' ^ (-1)			// this is ln (m1 / m0)
 						
 						** Lagged values for rocket
-						//gen lag_mdot_`pri'		= L.mdotinv_`pri'
+						//gen double lag_mdot_`pri'		= L.mdotinv_`pri'
 						
 						** Ejected velocity u - rocket
-						//gen u_`pri'				= mdot_`pri' * F1.a_`pri' + v_`pri'
+						//gen double u_`pri'				= mdot_`pri' * F1.a_`pri' + v_`pri'
 						
 						******************
 						** Rocket variables
@@ -3260,14 +3793,14 @@ program 			define 	NBProblem
 						** Percent change in mass - ln (m1 / m0)
 						** Assumes change in mass is mass ablation/accretion -- but only some of the mass is ablating, 
 						**   A portion is just disappearing (price change with no quantity change. Where does it go?
-						gen lnm_`pri'			= ln(w_`pri' / F1.w_`pri' )  // this is ln (m1 / m0)
-						gen fm_`pri'			= 1 - lnm_`pri' ^ (-1)			
-						gen fminv_`pri'			= fm_`pri' ^ (-1)			
-						gen int_`pri'			= lag_v_`pri' * fminv_`pri'
+						gen double lnm_`pri'			= ln(w_`pri' / F1.w_`pri' )  // this is ln (m1 / m0)
+						gen double fm_`pri'			= 1 - lnm_`pri' ^ (-1)			
+						gen double fminv_`pri'			= fm_`pri' ^ (-1)			
+						gen double int_`pri'			= lag_v_`pri' * fminv_`pri'
 											
 						** Ejected velocity u - rocket
-						gen u_`pri'				= F1.v_`pri' + a_`pri'  * fm_`pri'
-						gen indu_`pri'			= w_`pri' > F1.w_`pri'
+						gen double u_`pri'				= F1.v_`pri' + a_`pri'  * fm_`pri'
+						gen double indu_`pri'			= w_`pri' > F1.w_`pri'
 						
 						** Secondary
 						foreach sec of global nam  {
@@ -3280,16 +3813,16 @@ program 			define 	NBProblem
 							******************
 							
 							** Distance
-							gen d_`sec'_`pri'				= r_`sec' - r_`pri' 
-							gen lag_d_`sec'_`pri'			= L.d_`sec'_`pri'
+							gen double d_`sec'_`pri'				= r_`sec' - r_`pri' 
+							gen double lag_d_`sec'_`pri'			= L.d_`sec'_`pri'
 														
 							** Normed distance
-							gen n_`sec'_`pri'				= abs(d_`sec'_`pri')^3
-							gen lag_n_`sec'_`pri'			= L.n_`sec'_`pri'
+							gen double n_`sec'_`pri'				= abs(d_`sec'_`pri')^3
+							gen double lag_n_`sec'_`pri'			= L.n_`sec'_`pri'
 							
 							** Inververse normed distance
-							gen in_`sec'_`pri'				= 1/n_`sec'_`pri'
-							gen lag_in_`sec'_`pri'			= L.in_`sec'_`pri'
+							gen double in_`sec'_`pri'				= 1/n_`sec'_`pri'
+							gen double lag_in_`sec'_`pri'			= L.in_`sec'_`pri'
 
 							******************
 							** Rocket variables
@@ -3297,10 +3830,10 @@ program 			define 	NBProblem
 							******************
 
 							** Mass-distance
-							gen md_`pri'_`sec'				= w_`sec' * d_`sec'_`pri'
+							gen double md_`pri'_`sec'				= w_`sec' * d_`sec'_`pri'
 										
 							** Linear term
-							gen c_`sec'_`pri'				= w_`sec' * d_`sec'_`pri' * in_`sec'_`pri'
+							gen double c_`sec'_`pri'				= w_`sec' * d_`sec'_`pri' * in_`sec'_`pri'
 										
 						} //end loop
 						di "Done with seconary loop for primary: `pri'."
@@ -3683,13 +4216,13 @@ program 			define 	NBProblem
 							di "Primary velocity and accel: `pri'."
 							
 						** Velocity
-						gen v_`pri'				= r_`pri' - L.r_`pri' 
+						gen double v_`pri'				= r_`pri' - L.r_`pri' 
 												
 						** Acceleration
-						gen a_`pri'				= v_`pri' - L.v_`pri' 
+						gen double a_`pri'				= v_`pri' - L.v_`pri' 
 						
 						** Jolt (Jerk)
-						gen j_`pri'				= a_`pri' - L.a_`pri' 
+						gen double j_`pri'				= a_`pri' - L.a_`pri' 
 						
 						** Secondary
 						foreach sec of global nam  {
@@ -3697,19 +4230,19 @@ program 			define 	NBProblem
 								di "Starting primary: `pri' and secondary: `sec'."
 							
 							** Distance
-							gen d_`sec'_`pri'				= r_`sec' - r_`pri' 
+							gen double d_`sec'_`pri'				= r_`sec' - r_`pri' 
 														
 							** Normed distance
-							gen n_`sec'_`pri'				= abs(d_`sec'_`pri')^3
+							gen double n_`sec'_`pri'				= abs(d_`sec'_`pri')^3
 							
 							** Inververse normed distance
-							gen in_`sec'_`pri'				= 1/n_`sec'_`pri'
+							gen double in_`sec'_`pri'				= 1/n_`sec'_`pri'
 							
 							** Mass-distance
-							gen md_`pri'_`sec'				= w_`sec' * d_`sec'_`pri'
+							gen double md_`pri'_`sec'				= w_`sec' * d_`sec'_`pri'
 										
 							** Linear term
-							gen c_`sec'_`pri'				= w_`sec' * d_`sec'_`pri' * in_`sec'_`pri'
+							gen double c_`sec'_`pri'				= w_`sec' * d_`sec'_`pri' * in_`sec'_`pri'
 										
 						} //end loop
 						di "Done with seconary loop for primary: `pri'."

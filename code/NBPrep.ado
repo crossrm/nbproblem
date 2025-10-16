@@ -63,7 +63,7 @@ program 			define 	NBPrep
 					** Fill missing years
 					** Scale
 					sort year month
-					gen ratio				= cpi_hist / cpi
+					gen double ratio				= cpi_hist / cpi
 					replace cpi 			= cpi_hist / 2.97 if cpi ==.	// 1913 ratio
 					
 					** Calc inflation
@@ -71,9 +71,9 @@ program 			define 	NBPrep
 					gen obs 				= _n
 					sort obs
 					tsset obs
-					gen inflation_mo		= ( cpi - L12.cpi ) / L12.cpi
-					gen inflation_ann		= ( cpi - L1.cpi ) / L1.cpi
-					gen inflation 			= .
+					gen double inflation_mo		= ( cpi - L12.cpi ) / L12.cpi
+					gen double inflation_ann		= ( cpi - L1.cpi ) / L1.cpi
+					gen double inflation 			= .
 					replace inflation 		= inflation_ann if year <= 1912
 					replace inflation 		= inflation_mo if inflation == .
 					replace inflation 		= inflation * 100
@@ -174,10 +174,10 @@ program 			define 	NBPrep
 					
 					** Gen population growth rate
 					//tsset year
-					//gen r_pop		= (pop - l.pop) / l.pop
+					//gen double r_pop		= (pop - l.pop) / l.pop
 				
 					** Inflation adjust
-					//gen rr_bond		= r_bond - r_infl
+					//gen double rr_bond		= r_bond - r_infl
 					
 					** Drop 
 					//drop country
@@ -242,7 +242,7 @@ program 			define 	NBPrep
 				
 				** Save
 				cd_nb_stage
-				save equity_cap, replace
+				save equity_cap_ann, replace
 			
 			} //end if
 			di "Done with Kuvshinov data."
@@ -275,6 +275,7 @@ program 			define 	NBPrep
 				save debt_out, replace
 				use debt_out, clear
 						
+				** Treasuries impute
 				** Gen full history monthly panel 
 				** Only enable this on the 2nd run of the program - depends on a file saved below
 				//scalar treasmo = 1 // Now set by calling file
@@ -296,14 +297,14 @@ program 			define 	NBPrep
 					use debt_out_mo, clear
 				
 					** Months
-					clear all
+					clear
 					set obs 12
 					gen month 								= _n
 					gen join_one							= 1
 					cd_nb_stage
 					save join_months, replace
 					** Years
-					clear all
+					clear
 					local span 	= 2025 - 1790 + 1
 					set obs `span'
 					gen year			=  _n + 1790 - 1
@@ -339,11 +340,11 @@ program 			define 	NBPrep
 					if look == 1 {
 						
 						sort year
-						egen avg					= mean(mdebtout), by(year)
+						egen double avg					= mean(mdebtout), by(year)
 						replace avg					= round(avg)
 						gsort -year -month
-						gen diffmoavg			= debtout - avg
-						gen diff_dec			= debtout - mdebtout
+						gen double diffmoavg			= debtout - avg
+						gen double diff_dec			= debtout - mdebtout
 						sum diff* if debtout ~= .
 						drop diff* avg
 						
@@ -396,7 +397,7 @@ program 			define 	NBPrep
 					** Gen september ending debt covariate
 					gen fiscalyear								= year
 					replace fiscalyear							= fiscalyear - 1 if month < 10
-					gen double debout_zero						= debtout * 1000				// multiply to preserve accuracy of egen sum function below
+					gen double double debout_zero				= debtout * 1000				// multiply to preserve accuracy of egen sum function below
 					replace debout_zero							= 0 if debtout ==.
 					sort fiscalyear year month
 					by fiscalyear: egen double ending_debt		= sum(debout_zero)
@@ -521,22 +522,21 @@ program 			define 	NBPrep
 						reg change 	gdp r_priceR c.baa#c.aaa##c.aaa c.gdp#c.baa##presidency##housemaj##c.r_price conflicts#c.debt_linear#c.gdp#housemaj  if (incl) & ending_debt > 0 // & fiscalmonth ~= 12
 						fit_nb change	
 						** Partial interactions V - 0.1875 / 0.1344 / 0.1985 / 0.2983 / 0.2411 / 0.3057 / 0.2109 / 0.2407
-						reg change 	c.gdp#c.r_priceR c.baa#c.aaa##c.aaa#c.pop c.gdp#c.baa##presidency##housemaj##c.r_price#conflicts#c.debt_linear#c.gdp   if (incl) & ending_debt > 0 // & fiscalmonth ~= 12
+						reg change 	c.gdp#c.r_priceR#c.baa c.baa#c.aaa##c.aaa##c.aaa#c.pop c.gdp#c.baa##presidency##housemaj##c.r_price#conflicts#c.debt_linear#c.gdp   if (incl) & ending_debt > 0 // & fiscalmonth ~= 12
 						fit_nb change	
-						
-						sum change changep starting_debt ending_debt mdebtout debt_linear gdp r_priceR baa aaa pop presidency housemaj r_price conflicts  if (incl) & ending_debt > 0 // & fiscalmonth ~= 12
+												
+							sum change changep starting_debt ending_debt mdebtout debt_linear gdp r_priceR baa aaa pop presidency housemaj r_price conflicts  if (incl) & ending_debt > 0 // & fiscalmonth ~= 12
 						
 					** Save intermediate
 					cd_nb_stage
 					save treas_progress2, replace
 					use treas_progress2, clear
-					
-									
+														
 					** Impute
 					drop if ending_debt == 0
+					drop if aaa==.
 					drop incl changep
 					reg change 	c.gdp#c.r_priceR c.baa#c.aaa##c.aaa#c.pop c.gdp#c.baa##presidency##housemaj##c.r_price#conflicts#c.debt_linear#c.gdp   //if ending_debt > 0 // & fiscalmonth ~= 12
-					reg change obs
 					predict double yhat, xb
 					
 					** Correct for beginning and ending (scale) and replace missing
@@ -580,22 +580,315 @@ program 			define 	NBPrep
 										
 						order obs year month fiscal* yhat change *_delta starting_debt ending_debt mdebtout* debtout 	
 						gsort -obs 
+						
+					** Save covariates for stock capitalization seasonality
+					cd_nb_stage
+					savesome obs year month yhat change starting_d* ending_debt gdp-cpi using equity_covars, replace
 					
-					** Keep
+					** Keep treas
 					sort year month
 					order year month *debtout*
 					keep year month mdebtout2
 					rename mdebtout2 debtout
 					
-					** Save
+					** Save treas
 					cd_nb_stage
 					save debt_out, replace
 			
 				} //end if
 				di "Done with monthly treasury impute."
 				
+				** Stock capitalization impute
+				** Gen full history monthly panel 
+				** Only enable this on the 2nd run of the program - depends on a file saved below
+				//scalar treasmo = 1 // Now set by calling file
+				if treasmo == 1 {
+						
+					** Load monthly
+					cd_nb_source
+					import excel "Wilshire5000Monthly", sheet(Wilshire5000) firstrow clear
+					
+					** Clean for join
+					renvars *, lower
+					keep year monthclose adjclose
+					rename adjclose mocap
+					rename monthclose month
+					** Adjust for 1st-of-month data convention - move to EOM
+					replace year							= year - 1 if month==12
+					
+					** Save 
+					cd_nb_stage
+					save equity_mo, replace
+					use equity_mo, clear
+				
+					** Load monthly panel
+					cd_nb_stage
+					use monthly_panel, clear
+									
+					** Join annual
+					cd_nb_stage
+					joinby year using equity_cap_ann, unmatched(both)
+						tabulate _merge
+						drop _merge
+					
+					** Join monthly
+					cd_nb_stage
+					joinby year month using equity_mo, unmatched(both)
+						tabulate _merge
+						drop _merge
+						
+					** Drop
+					drop if mcap ==.
+					
+					** Look
+					scalar look = 0
+					if look == 1 {
+						
+						sort year
+						egen double avg				= mean(mdebtout), by(year)
+						replace avg					= round(avg)
+						gsort -year -month
+						gen double diffmoavg		= debtout - avg
+						gen double diff_dec			= debtout - mdebtout
+						sum diff* if debtout ~= .
+						drop diff* avg
+						
+					} //end if
+					di "Done with look treas."
+					
+					** Save intermediate
+					cd_nb_stage
+					save equity_progress, replace	
+					use equity_progress, clear
+					
+					** Dev stop
+					if treasmo == 1 {
+						
+						//asdf_fix1
+					
+					} //end if
+					di "Done with dev stop."
+												
+					************************************
+					** Impute missing months
+					************************************
+					gsort -year -month
+					
+					** Gen ending (annual) debt covariate
+					gen ending_cap								= mcap
+					** Gen starting debt covariate
+					sort year month
+					gen obs										= _n
+					sort obs
+					tsset obs
+					gen double starting_cap						= L12.ending_cap
+					** Growth covariates
+					gen double cap_growth						= ending_cap - starting_cap
+					gen double cap_growth_mo					= cap_growth / 12
+					sort year
+					by year: gen double cap_cumul				= sum(cap_growth_mo) 
+					gen double cap_linear						= starting_cap + cap_cumul
+					
+					** Clean up
+					drop if starting_cap == 0 
+					drop if starting_cap == . 
+									
+						** Reg
+						reg mocap starting_cap ending_cap cap_linear i.month 
+						
+					** Monthly Change (dep var)
+					sort obs
+					tsset obs
+					gen double change							= mocap - L.mocap 
+						*scatter change obs if change ~=.
+					gen double changep							= change / starting_cap
+					gen double end_diff							= ending_cap - cap_linear
+					
+						sum if year == 2002
+				
+					** Approximations
+					set seed	101							// 101 1011 1015 10151 101511 1015112(55 test) 1015115(55) / 1014115(55) incl Dec
+					gen randsample			= runiform()
+					sort randsample
+					gen ob					= _n
+					sum ob
+					local holdout			= 0.55
+					local upper				= ceil(r(max) * `holdout')
+					gen incl 				= (ob <= `upper')
+						di "Upper is `upper', holdout is `holdout'."
+						sum ob randsample incl if mocap ~= .  & ending_cap > 0 //& month ~= 12
+						tab incl if mocap ~= .  & ending_cap > 0 //& month ~= 12
+					replace incl			= (incl==1 & mocap ~= . & ending_cap > 0 ) //& month ~= 12)
+					drop ob
+					
+						** Reg
+						reg change 	starting_cap ending_cap cap_linear i.month c.obs##c.obs if (incl) // & ending_cap > 0 //& month ~= 12
+						fit_nb change 
+						reg changep starting_cap cap_linear i.month if(incl) // & ending_cap > 0 //& month ~= 12
+						fit_nb changep 
+					
+					************************************
+					** Covariates to impute missing months
+					************************************
+					** Join monthly
+					cd_nb_stage
+					joinby year month using equity_covars, unmatched(both)
+						tabulate _merge
+						drop _merge
+					drop if cpi==.
+					rename yhat debt_yhat
+						gsort -year -month
+													
+						** Look
+						sum change* starting_cap ending_cap cap_linear i.month c.obs##c.obs aaa baa conflicts house* senat* presid* cpi r_price* pop gdp if(incl) // & ending_cap > 0 & month ~= 12
+						order year month change* starting_cap ending_cap cap_linear obs aaa baa conflicts house* senat* presid* cpi r_price* pop gdp
+						corr change* starting_cap ending_cap cap_linear obs aaa baa conflicts house* senat* presid* cpi r_price* pop gdp debt_yhat if(incl) // & ending_cap > 0 & month ~= 12
+						sort year month 
+						** Reg
+						reg change 	starting_cap ending_cap cap_linear i.month c.obs##c.obs aaa baa conflicts house* senat* presid* cpi r_price* pop gdp if(incl) // & ending_cap > 0 & month ~= 12
+						fit_nb change 
+						reg changep starting_cap 			  cap_linear i.month 			 aaa baa conflicts house* senat* presid* cpi r_price pop gdp if(incl) // & ending_cap > 0 & month ~= 12
+						fit_nb changep 
+					
+					** Save Turing Bot
+					cd_nb_stage
+					savesome change* starting_cap ending_cap cap_linear obs aaa baa conflicts house* senat* presid* cpi r_price* pop gdp if(incl) & change~=. using turing_equity, replace // & ending_cap > 0 & month ~= 12 
+					//use turing_equity, clear
+					
+						** Interactive models
+						** First look - 0.0046
+						reg change 	starting_cap ending_cap cap_linear i.month c.obs##c.obs aaa baa conflicts house* senat* presid* cpi r_price* pop gdp if(incl) // & ending_cap > 0 //& month ~= 12
+						fit_nb change 
+						** Linear - 0.036 / 0.102 / 0.1793 / 0.1204
+						reg change 	gdp r_priceR baa presidency housemaj r_price cap_linear if(incl) // & ending_cap > 0 & month ~= 12
+						fit_nb change 
+						** Partial interactions - 0.10	/ 0.1713 / 0.1711 / 0.2980 / 0.2977
+						reg change 	gdp r_priceR c.gdp#c.baa##c.presidency##c.housemaj##c.r_price cap_linear presidency r_price if(incl) // & ending_cap > 0 // & month ~= 12
+						fit_nb change	
+						** Partial interactions II - 0.119 / 0.172 / 0.1678	/ 0.2520 / 0.2936
+						reg change 	gdp r_priceR c.gdp#c.baa##c.presidency##c.housemaj##c.r_price conflicts#c.cap_linear#c.gdp#housemaj  if(incl) // & ending_cap > 0 // & month ~= 12
+						fit_nb change	
+						** Partial interactions III - 0.094	/ 0.1175 / 0.1597 / 0.1080 / 0.1700
+						reg change gdp r_priceR c.gdp#c.baa##c.presidency##c.housemaj#c.r_price#c.r_priceR conflicts#c.cap_linear#c.gdp#housemaj  if(incl) // & ending_cap > 0 // & month ~= 12
+						fit_nb change	
+						** Partial interactions IV - 0.1382 / 0.1581 / 0.2240 / 0.2977 / 0.2679 / 0.1846 / 0.2040 / 0.2404
+						reg change 	gdp r_priceR c.baa#c.aaa##c.aaa c.gdp#c.baa##presidency##housemaj##c.r_price conflicts#c.cap_linear#c.gdp#housemaj  if(incl) // & ending_cap > 0 // & month ~= 12
+						fit_nb change	
+						** Partial interactions V - 0.1875 / 0.1344 / 0.1985 / 0.2983 / 0.2411 / 0.3057 / 0.2109 / 0.2407
+						reg change 	c.gdp#c.r_priceR#c.baa c.baa#c.aaa##c.aaa##c.aaa#c.pop c.gdp#c.baa##presidency##housemaj##c.r_price#conflicts#c.cap_linear#c.gdp   if(incl) // & ending_cap > 0 // & month ~= 12
+						fit_nb change	
+						** Partial interactions VI - 0.11
+						reg change 	c.gdp##c.gdp#c.r_priceR#c.baa#c.baa c.baa#c.baa##c.aaa##c.aaa##c.aaa#c.pop#c.pop ///
+							c.gdp#c.baa##presidency##housemaj##c.r_price#c.r_price##conflicts#c.cap_linear#c.gdp#c.debt_yhat ///
+							c.debt_yhat##c.debt_yhat##c.debt_yhat i.month if(incl) // & ending_cap > 0 // & month ~= 12
+						fit_nb change	
+						** Partial interactions VII - 0.1270
+						reg change 	c.gdp##c.gdp#c.r_priceR#c.baa#c.baa c.baa#c.baa##c.aaa##c.aaa##c.aaa#c.pop#c.pop ///
+							c.gdp#c.baa##presidency##housemaj##c.r_price#c.r_price##conflicts#c.cap_linear#c.gdp#c.debt_yhat ///
+							c.debt_yhat##c.debt_yhat##c.debt_yhat if(incl) // & ending_cap > 0 // & month ~= 12
+						fit_nb change	
+												
+							sum change changep starting_cap ending_cap mocap cap_linear gdp r_priceR baa aaa pop presidency housemaj r_price conflicts debt_yhat if (incl) // & ending_cap > 0 // & month ~= 12
+						
+					** Save intermediate
+					cd_nb_stage
+					save equity_progress2, replace
+					use equity_progress2, clear
+														
+					** Impute
+					drop if ending_cap == 0
+					drop if aaa==.
+					drop incl changep
+					reg change 	c.gdp##c.gdp#c.r_priceR#c.baa#c.baa c.baa#c.baa##c.aaa##c.aaa##c.aaa#c.pop#c.pop ///
+							c.gdp#c.baa##presidency##housemaj##c.r_price#c.r_price##conflicts#c.cap_linear#c.gdp#c.debt_yhat ///
+							c.debt_yhat##c.debt_yhat##c.debt_yhat 
+					predict double yhat, xb
+					
+					** Dev stop
+					if treasmo == 1111 {
+						
+						asdf_fix2
+					
+					} //end if
+					di "Done with dev stop."
+												
+					
+					** Correct for beginning and ending (scale) and replace missing
+						order obs year month yhat change starting_cap ending_cap mocap cap_linear gdp r_priceR baa aaa pop presidency housemaj r_price conflicts  
+						gsort -obs
+					sort year month
+					by year: egen double sum_change_delta		= sum(change)
+					by year: egen double yhat_delta				= sum(yhat)
+					gen double annual_delta						= ending_cap - starting_cap	
+					drop if yhat ==.
+					
+						sum 	year month change yhat starting_cap ending_cap mocap debt_yhat sum_change* yhat_delta annual_delta cap_linear gdp r_priceR baa aaa pop presidency housemaj r_price conflicts 
+						order 	year month change yhat starting_cap ending_cap mocap debt_yhat sum_change* yhat_delta annual_delta cap_linear gdp r_priceR baa aaa pop presidency housemaj r_price conflicts 
+						gsort -obs
+				
+					** Scale so yhat cumulative change matches annual change
+						sum yhat *delta
+					replace yhat								= yhat * annual_delta / yhat_delta
+					sort year month
+					by year: egen double yhat2_delta			= sum(yhat)
+						sum yhat *delta
+						order year month change yhat *_delta
+											
+						sum 	year month change yhat starting_cap ending_cap mcap mocap* debt_yhat sum_change* yhat*_delta annual_delta cap_linear gdp r_priceR baa aaa pop presidency housemaj r_price conflicts 
+						order 	year month change yhat starting_cap ending_cap mcap mocap* debt_yhat sum_change* yhat*_delta annual_delta cap_linear gdp r_priceR baa aaa pop presidency housemaj r_price conflicts 
+						gsort -obs
+
+					** Generate monthly cap
+					gen double mocap2							= mocap
+					replace mocap2								= mcap if mocap == . & mcap ~= . & month==12
+					** Loop fill forward
+					sort obs
+					tsset obs
+					foreach num of numlist 1/11 {
+						
+						replace mocap2							= L1.mocap2 + yhat if mocap2 == . & month == `num'
+						
+					} //end loop
+					di "Done with fill change loopf."
+					** Loop fill backwards
+					sort obs
+					tsset obs
+					foreach num of numlist 11/1 {
+						
+						replace mocap2							= F1.mocap2 - yhat if mocap2 == . & month == `num'
+						
+					} //end loop
+					di "Done with fill change loopb."
+													
+					** Save covariates for stock capitalization seasonality
+					if treasmo == 0 {
+						
+						order obs year month * yhat change *_delta starting_cap ending_cap mocap* 	
+						gsort -obs 
+						cd_nb_stage
+						savesome obs year month yhat change starting_d* ending_cap gdp-cpi using stock_covars, replace
+						
+					} //end if
+					di "Done with first round save."
+					
+					** Keep equity
+					sort year month
+					order year month mocap*
+					keep year month mocap2
+					rename mocap2 mcap
+					
+					** Save equity
+					cd_nb_stage
+					save cap_out, replace
+					use cap_out, clear
+			
+				} //end if
+				di "Done with monthly equity impute."
+				
+				
+				
 			} //end if
-			di "Done with treas data."
+			di "Done with equity data."
 			
 			****************
 			** Shiller - bonds, equities, housing prices
@@ -625,7 +918,7 @@ program 			define 	NBPrep
 				local payout_rate_early		= 0.625
 				local payout_rate_mid		= 0.825
 				local payout_rate_late		= 1.000
-				gen r_stock					= e / p
+				gen double r_stock					= e / p
 				replace r_stock				= r_stock * `payout_rate_early' if year <= 1983
 				replace r_stock				= r_stock * `payout_rate_mid' 	if year > 1983 & year <= 1993  //cite Plowback Capex (finario.com)
 				replace r_stock				= r_stock * `payout_rate_late' 	if year > 1993
@@ -643,13 +936,13 @@ program 			define 	NBPrep
 				gen n1						= _n
 				sort n1
 				tsset n1
-				gen cpi_lag1				= L12.cpi 
-				gen r_price					= (cpi - cpi_lag1) / cpi_lag1 //* 12
+				gen double cpi_lag1				= L12.cpi 
+				gen double r_price					= (cpi - cpi_lag1) / cpi_lag1 //* 12
 				replace r_price				= r_price * 100
 					sum r_price
 					
 				** Rogoff r_price - Long-Run Trends, Rogoff et al., AER 2024 - t-7 to t-1, 33, 23, 16, 11, 8, 3
-				gen r_priceR				= L1.r_price * 0.33 + L1.r_price * 0.23 + L1.r_price * 0.16 + L1.r_price * 0.11 + L1.r_price * 0.08 + L1.r_price * 0.03  
+				gen double r_priceR				= L1.r_price * 0.33 + L1.r_price * 0.23 + L1.r_price * 0.16 + L1.r_price * 0.11 + L1.r_price * 0.08 + L1.r_price * 0.03  
 					reg r_price r_priceR
 					
 				** Keep and save
@@ -710,7 +1003,7 @@ program 			define 	NBPrep
 				** Gen growth
 				sort year
 				tsset year
-				gen growth						=  house_units - L1.house_units
+				gen double growth						=  house_units - L1.house_units
 				
 				** Order and save
 				order 	year month house_units growth source 
@@ -728,9 +1021,9 @@ program 			define 	NBPrep
 				//gen desc_mo								= 13 - month							
 				
 				sort year month
-				by year: egen annual_tot 				= sum(completions)
-				gen season_wts							= completions / annual_tot 
-				by year: gen cumul_wts					= sum(season_wts)
+				by year: egen double annual_tot 				= sum(completions)
+				gen double season_wts							= completions / annual_tot 
+				by year: gen double cumul_wts					= sum(season_wts)
 				replace season_wts						= cumul_wts
 				drop cumul_wts
 				
@@ -747,13 +1040,13 @@ program 			define 	NBPrep
 				
 				** Gen seasonality weights (for earlier years)
 				sort month
-				by month: egen seasonal_wts				= sum(completions) 
-				egen allyears_compl						= sum(completions)
+				by month: egen double seasonal_wts				= sum(completions) 
+				egen double allyears_compl						= sum(completions)
 				replace seasonal_wts					= seasonal_wts / allyears_compl
 				keep month seasonal_wts
 				duplicates drop
 				sort month
-				gen cumul_wts					= sum(seasonal_wts)
+				gen double cumul_wts					= sum(seasonal_wts)
 				
 				** Order and save
 				rename cumul_wts season_wts_fill
@@ -764,7 +1057,7 @@ program 			define 	NBPrep
 			
 				** Generate full-history monthly housing file
 				** Months
-				clear all
+				clear
 				set obs 12
 				gen month 								= _n
 				gen join_one							= 1
@@ -815,7 +1108,7 @@ program 			define 	NBPrep
 				** Adjust annual units for seasonal completions
 				** units are December units, less incomplete portion of year's projects
 				replace season_wts					= 1 - season_wts
-				gen incompletes						= growth * season_wts
+				gen double incompletes						= growth * season_wts
 				replace house_units					= house_units - incompletes 
 				
 				** Save
@@ -840,20 +1133,20 @@ program 			define 	NBPrep
 				sort year month 
 				gen obs								= _n
 				tsset obs
-				gen last_price						= L12.house_price
-				gen gain							= house_price - last_price
+				gen double last_price						= L12.house_price
+				gen double gain							= house_price - last_price
 				
 				** Fill gain
 				sort year
-				by year: egen fill_price			= sum(house_price)
+				by year: egen double fill_price			= sum(house_price)
 				sort obs
-				gen rev_fill_price					= L12.fill_price
+				gen double rev_fill_price					= L12.fill_price
 				sort year
-				by year: egen fill_gain				= sum(gain)
-				gen monthly_fill					= fill_gain / 12 * month if house_price == .
+				by year: egen double fill_gain				= sum(gain)
+				gen double monthly_fill					= fill_gain / 12 * month if house_price == .
 				replace house_price					= rev_fill_price + monthly_fill if house_price == .
 				replace house_price					= . if house_price==0
-				gen w_house							= house_price * house_units / 1000000000 //billions of dollars
+				gen double w_house							= house_price * house_units / 1000000000 //billions of dollars
 				gen w_price							= 1 //numeraire 
 				
 				** Add master time variable t
@@ -879,16 +1172,33 @@ program 			define 	NBPrep
 				cd_nb_stage
 				use housing_data, clear
 				
-				** Join equity market cap w_equity
-				cd_nb_stage
-				joinby year using equity_cap, unmatched(master)
-					tab _merge
-					drop _merge
-				gen equ_cap_orig			= (month==12 & mcap~=.)
-				
+				** Join monthly equity market cap w_equity
+				if treasmo == 1 {
+					
+						** Display
+						scalar list treasmo
+					
+					cd_nb_stage
+					joinby year month using cap_out, unmatched(master)
+						tab _merge
+						drop _merge
+					gen equ_cap_orig			= (month==12 & mcap~=.)
+					
+				} //end if
+				else {
+					
+					cd_nb_stage
+					joinby year using equity_cap_ann, unmatched(master)
+						tab _merge
+						drop _merge
+					gen equ_cap_orig			= (month==12 & mcap~=.)
+					
+				} //end if
+				di "Done with if treasmo join annual."
+										
 				** Naming (billions)
 				rename mcap w_stock
-							
+											
 				** Join debt outstanding w_debt
 				cd_nb_stage
 				joinby year month using debt_out, unmatched(master)
@@ -984,59 +1294,59 @@ program 			define 	NBPrep
 								
 					** Look at implied net rent 
 					order month year, last
-					gen implied_rent			= house_price * r_house / 12
+					gen double implied_rent				= house_price * r_house / 12
 					
 					** Interpolate monthly implied inflation
 					sort year month
-					replace t					= _n
+					replace t							= _n
 					** Forecast
 					reg implied_rent t c.rent_index##c.rent_index 
 					predict index_hat, xb 
 					** Calc implied inflation
 					sort t
 					tsset t
-					gen implied_gain			= (implied_rent - L12.implied_rent) 
-					gen implied_infl			= implied_gain / L12.implied_rent
-					gen index_infl				= (index_hat - L1.index_hat) / L1.index_hat
+					gen double implied_gain				= (implied_rent - L12.implied_rent) 
+					gen double implied_infl				= implied_gain / L12.implied_rent
+					gen double index_infl				= (index_hat - L1.index_hat) / L1.index_hat
 					
 					** Compare annual indexed inflation to implied inflation and correct
 					sort year
-					by year: egen index_ann		= sum(index_infl)
-					by year: egen implied_ann	= sum(implied_infl)
+					by year: egen double index_ann		= sum(index_infl)
+					by year: egen double implied_ann	= sum(implied_infl)
 					drop implied_infl
 					
 					** Scale index inflation
-					gen index_corr				= index_infl / index_ann * implied_ann
-					by year: egen check_impl	= sum(index_corr)
+					gen double index_corr				= index_infl / index_ann * implied_ann
+					by year: egen double check_impl		= sum(index_corr)
 					drop implied_ann index_ann index_infl
 					
 					** Accumulate and fill
-					by year: gen cumul_index	= sum(index_corr)
-					gen cumul_corr				= cumul_index / check_impl
-					by year: egen gain			= sum(implied_gain)
+					by year: gen double cumul_index		= sum(index_corr)
+					gen double cumul_corr				= cumul_index / check_impl
+					by year: egen double gain			= sum(implied_gain)
 					drop check_impl implied_gain cumul_index index_corr
 					
 					** New r_house 
 					sort t
-					gen LY_implied_rent			= L12.implied_rent
+					gen double LY_implied_rent			= L12.implied_rent
 					sort year
-					by year: egen implied_rent2	= sum(LY_implied_rent)
+					by year: egen double implied_rent2	= sum(LY_implied_rent)
 					drop LY_implied_rent
-					replace implied_rent2		= implied_rent2 + gain * cumul_corr // last year rent, plus the monthly portion of the annual gain
+					replace implied_rent2				= implied_rent2 + gain * cumul_corr // last year rent, plus the monthly portion of the annual gain
 					drop gain cumul_corr
 					
 					** Drop intermediate months with missing index values
-					gen missing					= 0
-					replace missing				= 1 if rent_index == .
+					gen missing							= 0
+					replace missing						= 1 if rent_index == .
 					sort year
-					by year: egen dropit		= sum(missing)
+					by year: egen dropit				= sum(missing)
 					drop if index_hat==. & r_house == .
 					drop if dropit > 0   & r_house == .
 					drop dropit missing
 					
 					** Fill monthly r_house
-					gen implied_rate 			= implied_rent2 * 12 / house_price
-					replace r_house 			= implied_rate if r_house==. & implied_rate ~= .
+					gen double implied_rate 			= implied_rent2 * 12 / house_price
+					replace r_house 					= implied_rate if r_house==. & implied_rate ~= .
 					drop implied_rent2 implied_rate
 					
 					** Fill later-years r_house > 2015
@@ -1045,8 +1355,8 @@ program 			define 	NBPrep
 					sum index_hat  if year == 2015 & month ==12
 					local ind = r(mean)
 						di "Scaling `ind' to `impl'."
-					gen implied_rent3 			= index_hat / `ind' * `impl'
-					replace r_house 			= implied_rent3 * 12 / house_price if r_house == . & implied_rent3 ~=.
+					gen double implied_rent3 			= index_hat / `ind' * `impl'
+					replace r_house 					= implied_rent3 * 12 / house_price if r_house == . & implied_rent3 ~=.
 					rename implied_rent3 net_rent
 					drop implied_rent* index_* rent_index
 					
