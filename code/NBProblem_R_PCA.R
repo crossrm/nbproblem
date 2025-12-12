@@ -41,7 +41,8 @@ summary(rates.pca)
 fviz_eig(rates.pca) # Visualization of variance explained by each component
 
 # Variable plot
-fviz_pca_var(rates.pca, axes(1, 2),
+fviz_pca_var(rates.pca, 
+             axes=c(1, 2),
              col.var = "contrib", # Control variable color using their contributions to the PC
              gradient.cols = c("#70f6ff", "#00AFBB", "#ffd224", "#d8ac00", "#FC4E07", "#a73203"),
              repel = TRUE,     # Avoid text overlapping

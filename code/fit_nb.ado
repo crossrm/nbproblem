@@ -27,17 +27,17 @@ program 			define 			fit_nb, rclass
 		** SS method
 		quietly predict yhat, xb		
 		quietly gen ehat		=	(`s' - yhat) 
-		quietly gen RSS			=	ehat^2
-		quietly summarize RSS 							if (incl==`incl' & yhat~=.)
-		scalar rss				=	r(mean)
+		quietly gen ESS			=	ehat^2
+		quietly summarize ESS 							if (incl==`incl' & yhat~=.)
+		scalar ess				=	r(mean)
 		quietly summarize `s' 							if (incl==`incl' & yhat~=.)
 		scalar smean			=	r(mean)
 		quietly gen TSS			=	(`s' - smean)^2
 		quietly summarize TSS 							if (incl==`incl' & yhat~=.)
 		scalar tss				=	r(mean)
-		scalar r2				=	1- (rss / tss)
+		scalar r2				=	1- (ess / tss)
 			di ""
-		scalar list rss tss r2
+		scalar list ess tss r2
 		
 		** Corr method
 		quietly corr `s' yhat if (incl==`incl' & yhat~=.)
@@ -49,7 +49,8 @@ program 			define 			fit_nb, rclass
 		** Store stats for ratio -- r2 for SS method, R2 for corr method
 		scalar r2_`incl'		= R2	//r2  
 		
-		drop ehat RSS TSS yhat
+			sum ehat ESS TSS yhat `s' year if incl==`incl'
+		drop ehat ESS TSS yhat
 				
 	} //end loop
 	di ""

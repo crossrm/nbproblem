@@ -111,6 +111,7 @@ program 			define 	NBPrep
 					** Save for join
 					cd_nb_stage
 					save rent_index, replace
+					use rent_index, clear
 					
 					** Prep gdp annual
 					cd_nb_source
@@ -146,6 +147,7 @@ program 			define 	NBPrep
 				** Save for join
 				cd_nb_stage
 				save jorda_main, replace
+				use jorda_main, clear
 							
 				****************************
 				** Load supplement and join
@@ -385,7 +387,7 @@ program 			define 	NBPrep
 					save conflicts, replace
 					
 					************************************
-					** Impute missing months
+					** Impute missing months - treasury
 					************************************
 					** Save intermediate
 					cd_nb_stage
@@ -594,6 +596,7 @@ program 			define 	NBPrep
 					** Save treas
 					cd_nb_stage
 					save debt_out, replace
+					use equity_covars, clear
 			
 				} //end if
 				di "Done with monthly treasury impute."
@@ -660,17 +663,9 @@ program 			define 	NBPrep
 					cd_nb_stage
 					save equity_progress, replace	
 					use equity_progress, clear
-					
-					** Dev stop
-					if treasmo == 1 {
 						
-						//asdf_fix1
-					
-					} //end if
-					di "Done with dev stop."
-												
 					************************************
-					** Impute missing months
+					** Impute missing months - stock capitalization
 					************************************
 					gsort -year -month
 					
@@ -729,6 +724,7 @@ program 			define 	NBPrep
 					
 					************************************
 					** Covariates to impute missing months
+					** Stock cap
 					************************************
 					** Join monthly
 					cd_nb_stage
@@ -885,8 +881,6 @@ program 			define 	NBPrep
 				} //end if
 				di "Done with monthly equity impute."
 				
-				
-				
 			} //end if
 			di "Done with equity data."
 			
@@ -978,7 +972,8 @@ program 			define 	NBPrep
 				keep year month house_price 
 				cd_nb_stage
 				save shiller_housing, replace
-				
+				use shiller_housing, clear
+	
 			} //end if
 			di "Done with Jorda data."
 			
@@ -1173,6 +1168,7 @@ program 			define 	NBPrep
 				use housing_data, clear
 				
 				** Join monthly equity market cap w_equity
+				** Second run treasmo == 1
 				if treasmo == 1 {
 					
 						** Display
@@ -1185,6 +1181,7 @@ program 			define 	NBPrep
 					gen equ_cap_orig			= (month==12 & mcap~=.)
 					
 				} //end if
+				** First run treasmo == 0
 				else {
 					
 					cd_nb_stage
@@ -1268,6 +1265,7 @@ program 			define 	NBPrep
 					
 				** Order
 				order year month t *_orig cpi r_price gdp pop w_stock w_bond w_house w_price r_stock r_bond r_house house_price house_units 
+				** House price inclusion (later change to net rent inclusion)
 				gen h_include 				= (house_price ~=.) 
 				
 				** Update t
@@ -1291,59 +1289,309 @@ program 			define 	NBPrep
 					
 					** Drop missing data for sums
 					keep if house_price ~=.
-								
+					sort year month t
+										
 					** Look at implied net rent 
 					order month year, last
 					gen double implied_rent				= house_price * r_house / 12
 					
-					** Interpolate monthly implied inflation
+					** Interpolate model 1 -- 1947 onward -- monthly implied housing variability
 					sort year month
 					replace t							= _n
-					** Forecast
-					reg implied_rent t c.rent_index##c.rent_index 
+					
+					** Note non-annual and non-monthly rent_index periods			
+					** Drop frozen rent_index data (late WWII)	
+					gen period							= "monthly"
+					replace period						= "annual" 			if year <= 1918
+					replace period						= "semiannual" 		if year >=1919 & year <= 1920
+					replace period						= "semiannual" 		if t <= 523 & year >=1925
+					replace period						= "intermittent" 	if t >= 362 & t <= 369 
+					replace period						= "quarterly" 		if t >= 370 & t <= 406 
+					replace period						= "quarterly" 		if t >= 380 & t <= 384 
+						replace rent_index				= .				 	if t >= 380 & t <= 384
+					replace period						= "intermittent" 	if t >= 407 & t <= 420 
+						replace rent_index				= .				 	if t >= 407 & t <= 420 
+					replace period						= "intermittent" 	if t >= 524 & t <= 549 
+					replace period						= "quarterly"	 	if t >= 550 & t <= 571 
+					replace period						= "intermittent" 	if t >= 572 & t <= 602
+						replace rent_index				= .					if t >= 572 & t <= 602
+					replace period						= "intermittent" 	if t == 604 | t == 606 | t==607 | t==612 | t==615 | t==617 
+						replace rent_index				= .					if t == 604 | t == 606 | t==607 | t==612 | t==615 | t==617 
+					replace period						= "intermittent" 	if t >= 621 & t <= 626
+						replace rent_index				= .					if t >= 621 & t <= 626
+					replace period						= "intermittent" 	if t >= 628 & t <= 643
+						replace rent_index				= .					if t >= 628 & t <= 643
+					replace period						= "intermittent" 	if t >= 645 & t <= 660
+						replace rent_index				= .					if t >= 645 & t <= 660
+					replace period						= "quarterly"	 	if t >= 657 & t <= 667 
+					replace period						= "intermittent" 	if t >= 668 & t <= 674 
+						replace rent_index				= .					if t >= 668 & t <= 674 
+					replace period						= "intermittent" 	if t == 676 | t == 678 | t==679  
+						replace rent_index				= .					if t == 676 | t == 678 | t==679   
+					
+						** Dev temp
+						order year month r_house house_price house_units t period rent_index implied_rent			
+						//drop if year <= 1917
+					
+					** Net rent monthly index or implied available
+					gen net_orig 						= (rent_index~=. | implied_rent ~=.)
+					gen net_include						= t >= 680								//From July, 1947						
+					
+					** Forecast implied rent from Jorda r_house
+					reg implied_rent rent_index c.t#c.house_price house_price c.house_price#c.house_units //c.t##c.t rent_index //cpi //gdp pop //##c.rent_index##c.rent_index dividend r_priceR cpi gdp pop 
 					predict index_hat, xb 
-					** Calc implied inflation
-					sort t
-					tsset t
-					gen double implied_gain				= (implied_rent - L12.implied_rent) 
-					gen double implied_infl				= implied_gain / L12.implied_rent
-					gen double index_infl				= (index_hat - L1.index_hat) / L1.index_hat
 					
-					** Compare annual indexed inflation to implied inflation and correct
-					sort year
-					by year: egen double index_ann		= sum(index_infl)
-					by year: egen double implied_ann	= sum(implied_infl)
-					drop implied_infl
+					** Interpolate model 2 -- Pre 1949 - missing rent_index entries
+					reg rent_index house_price c.t#c.house_price house_units c.t#c.house_units c.t##c.t##c.t 
+					predict index_hat2, xb
+					replace index_hat					= index_hat2 if year < 1949
+					drop index_hat2
 					
-					** Scale index inflation
-					gen double index_corr				= index_infl / index_ann * implied_ann
-					by year: egen double check_impl		= sum(index_corr)
-					drop implied_ann index_ann index_infl
+						** Dev temp
+						//sort index_hat year month
+						order year month r_house house_price house_units t period rent_index implied_rent index_*			
+						//drop if year <= 1917
 					
-					** Accumulate and fill
-					by year: gen double cumul_index		= sum(index_corr)
-					gen double cumul_corr				= cumul_index / check_impl
-					by year: egen double gain			= sum(implied_gain)
-					drop check_impl implied_gain cumul_index index_corr
+					** Annual interpolation
+					scalar annuall	= 1
+					if annuall == 1 {
+
+							** Dev save
+							cd_nb_stage 
+							save temp_interpol8, replace
+							
+							use temp_interpol8, clear
+													
+						** Calc implied rent inflation -- annual (pre 1919)
+						sort t
+						tsset t
+						gen double implied_gain				= (implied_rent - L12.implied_rent) 
+						gen double implied_infl				= implied_gain / L12.implied_rent
+						gen double index_infl				= (index_hat - L1.index_hat) / L1.index_hat
+						
+							** Dev temp
+							order year month r_house house_price house_units rent_index implied_rent index_hat* h_include index_infl implied_infl cpi pop gdp
+							//keep if year >= 1909
+							
+							
+						** Compare annual indexed inflation to implied inflation and correct
+						sort year
+						by year: egen double index_ann		= sum(index_infl)
+						by year: egen double implied_ann	= sum(implied_infl)
+						drop implied_infl
+						
+						** Scale index inflation
+						gen double index_corr				= index_infl / index_ann * implied_ann
+						by year: egen double check_impl		= sum(index_corr)
+						
+							** Dev temp
+							order year month r_house house_price house_units rent_index implied_rent index_hat* index_ann implied_ann index_corr check_impl index_infl index_ann implied_ann h_include 
+							//drop if year < 1906
+						
+						drop implied_ann index_ann index_infl
+						
+						** Accumulate and fill - not monthly 
+						by year: gen double cumul_index		= sum(index_corr)
+						gen double cumul_corr				= cumul_index / check_impl
+						by year: egen double gain			= sum(implied_gain)
+						
+							** Dev temp
+							order year month r_house house_price house_units rent_index implied_rent index_hat* index_corr cumul_index cumul_corr implied_gain gain h_include 
+							//drop if year < 1929
+						
+						drop check_impl implied_gain cumul_index index_corr
+										
+						** Match December Entries (for annual index period) 
+						** Gen implied_rent 2, fix to match december entries
+						sort t
+						gen double LY_implied_rent			= L12.implied_rent
+						sort year
+						by year: egen double implied_rent2	= sum(LY_implied_rent)
+						drop LY_implied_rent
+						replace implied_rent2				= implied_rent2 + gain * cumul_corr // last year rent, plus the monthly portion of the annual gain
+						replace implied_rent2				= implied_rent if implied_rent~=. & implied_rent2==. //fill Dec 1890
+													
+						** Dev temp
+						order year month r_house house_price house_units t rent_index implied_rent* gain index_hat* cumul_corr h_include 
 					
-					** New r_house 
-					sort t
-					gen double LY_implied_rent			= L12.implied_rent
-					sort year
-					by year: egen double implied_rent2	= sum(LY_implied_rent)
-					drop LY_implied_rent
-					replace implied_rent2				= implied_rent2 + gain * cumul_corr // last year rent, plus the monthly portion of the annual gain
+					** Clean up
 					drop gain cumul_corr
 					
-					** Drop intermediate months with missing index values
-					gen missing							= 0
-					replace missing						= 1 if rent_index == .
-					sort year
-					by year: egen dropit				= sum(missing)
-					drop if index_hat==. & r_house == .
-					drop if dropit > 0   & r_house == .
-					drop dropit missing
+					} //end if
+					di "Done with annual interpol calc."
+																
+					** Semi-annual interpolation
+					scalar siannuall	= 1
+					if siannuall == 1 {
+
+							** Dev save
+							cd_nb_stage 
+							save temp_interpol9, replace
+							
+							use temp_interpol9, clear
+							
+						** Add June rent_index levels (mean adjusted) to implied_rent	
+						sort t
+						tsset t
+						gen mean_index						= (L6.implied_rent + F6.implied_rent) / (L6.rent_index + F6.rent_index) 
+						replace implied_rent 				= rent_index * mean_index if period == "semiannual" & month == 6
+						
+							** Dev temp
+							order year month r_house house_price house_units t period rent_index implied_rent mean_index implied_rent2 index_hat* h_include 
+						
+						
+						** Calc implied rent inflation -- semiannual
+						gen double implied_gain				= (implied_rent - L6.implied_rent) 
+						gen double implied_infl				= implied_gain / L6.implied_rent
+						gen double index_infl				= (index_hat - L1.index_hat) / L1.index_hat
 					
+							** Dev temp
+							order year month r_house house_price house_units t period rent_index implied_rent mean_index implied_rent2 index_hat*   implied_gain implied_infl index_infl h_include 
+									
+						** Compare annual indexed inflation to implied inflation and correct
+						gen semiyear							= year + 0.5 * (month >= 1 & month <= 6)
+						order semiyear
+						sort semiyear t
+						by semiyear: egen double index_ann		= sum(index_infl)
+						by semiyear: egen double implied_ann	= sum(implied_infl)
+						drop implied_infl
+						
+						** Scale index inflation
+						gen double index_corr					= index_infl / index_ann * implied_ann
+						by semiyear: egen double check_impl		= sum(index_corr)
+						
+							** Dev temp
+							order year month r_house house_price house_units t period rent_index implied_rent mean_index implied_rent2 index_hat*   implied_gain index_infl    index_ann implied_ann index_corr check_impl h_include 
+							//drop if year < 1918
+						
+						drop implied_ann index_ann index_infl
+						
+						** Accumulate and fill - not monthly 
+						by semiyear: gen double cumul_index		= sum(index_corr)
+						gen double cumul_corr					= cumul_index / check_impl
+						by semiyear: egen double gain			= sum(implied_gain)
+						
+							** Dev temp
+							order semiyear year month r_house house_price house_units t period rent_index implied_rent mean_index implied_rent2 index_hat*   implied_gain index_corr check_impl h_include 
+							//drop if year < 1906
+						
+						drop check_impl implied_gain cumul_index index_corr
+										
+						** Match June Entries (for semiannual index period) 
+						** Gen implied_rent 3
+						sort t
+						gen double L6_implied_rent			= L6.implied_rent
+						sort semiyear t
+						by semiyear: egen double implied_rent3	= sum(L6_implied_rent)
+						replace implied_rent3				= implied_rent3 + gain * cumul_corr // last year rent, plus the monthly portion of the annual gain
+						** Fill semi-annual section					
+						replace implied_rent2				= implied_rent3 if implied_rent3~=. & period=="semiannual"
+						
+							** Dev temp
+							order semiyear year month r_house house_price house_units t period rent_index implied_rent mean_index implied_rent2 index_hat* L6*  implied_rent3 h_include 
+							//drop if year < 1906
+						
+						drop L6_implied_rent implied_rent3 mean_index semiyear cumul_corr gain
+						
+					} //end if
+					di "Done with semiannual interpol calc."
+				
+					** Quarterly interpolation
+					scalar quarter	= 1
+					if quarter == 1 {
+
+							** Dev save
+							cd_nb_stage 
+							save temp_interpol10, replace
+							
+							use temp_interpol10, clear
+								
+						** Add Quarterly rent_index levels (mean adjusted) to implied_rent	
+						sort t
+						tsset t
+						gen mean_index						= .
+						replace mean_index					= (L3.implied_rent + F9.implied_rent) / (L3.rent_index + F9.rent_index) if period == "quarterly" & month == 3 
+						replace mean_index					= (L6.implied_rent + F6.implied_rent) / (L6.rent_index + F6.rent_index) if period == "quarterly" & month == 6 
+						replace mean_index					= (L9.implied_rent + F3.implied_rent) / (L9.rent_index + F3.rent_index) if period == "quarterly" & month == 9 
+
+						replace implied_rent 				= rent_index * mean_index if period == "quarterly" & implied_rent==. & mean_index~=. & (month == 3 | month == 6 | month == 9 )
+						
+							** Dev temp
+							order year month r_house house_price house_units t period rent_index implied_rent mean_index implied_rent2 index_hat* h_include 
+							//drop if year < 1920
+						
+						** Calc implied rent inflation -- semiannual
+						gen double implied_gain				= (implied_rent - L3.implied_rent) 
+						gen double implied_infl				= implied_gain / L3.implied_rent
+						gen double index_infl				= (index_hat - L1.index_hat) / L1.index_hat
+					
+							** Dev temp
+							order year month r_house house_price house_units t period rent_index implied_rent mean_index implied_rent2 index_hat*   implied_gain implied_infl index_infl h_include 
+									
+						** Compare annual indexed inflation to implied inflation and correct
+						gen day								= 1
+						gen dt								= mdy(month, day, year)
+						gen quarter							= quarter(dt)
+							order dt quarter
+						drop day dt
+						gen qyear							= year + 0.1 * quarter
+							order qyear
+						drop quarter
+						sort qyear t
+						by qyear: egen double index_ann		= sum(index_infl)
+						by qyear: egen double implied_ann	= sum(implied_infl)
+						drop implied_infl
+						
+						** Scale index inflation
+						gen double index_corr				= index_infl / index_ann * implied_ann
+						by qyear: egen double check_impl	= sum(index_corr)
+						
+							** Dev temp
+							order year month r_house house_price house_units t period rent_index implied_rent mean_index implied_rent2 index_hat*   implied_gain index_infl    index_ann implied_ann index_corr check_impl h_include 
+							//drop if year < 1918
+						
+						drop implied_ann index_ann index_infl
+						
+						** Accumulate and fill - not monthly 
+						by qyear: gen double cumul_index	= sum(index_corr)
+						gen double cumul_corr				= cumul_index / check_impl
+						by qyear: egen double gain			= sum(implied_gain)
+						
+							** Dev temp
+							order qyear year month r_house house_price house_units t period rent_index implied_rent mean_index implied_rent2 index_hat*  cumul_index implied_gain index_corr check_impl h_include 
+							//drop if year < 1906
+						
+						drop check_impl implied_gain cumul_index index_corr
+										
+						** Match Quarterly Entries  
+						** Gen implied_rent 4
+						sort t
+						gen double L3_implied_rent			= L3.implied_rent
+						sort qyear t
+						by qyear: egen double implied_rent4	= sum(L3_implied_rent)
+						replace implied_rent4				= implied_rent4 + gain * cumul_corr // last year rent, plus the monthly portion of the annual gain
+												
+						** Fill semi-annual section					
+						replace implied_rent2				= implied_rent4 if implied_rent4~=. & period=="quarterly"
+						
+							** Dev temp
+							order qyear year month r_house house_price house_units t period rent_index implied_rent* mean_index index_hat* L3* gain cumul_corr h_include 
+							//drop if year < 1906
+						
+						drop L3_implied_rent implied_rent4 mean_index
+						
+					} //end if
+					di "Done with semiannual interpol calc."
+				
+						** Mark intermediate months with missing index values
+						gen missing							= 0
+						replace missing						= 1 if rent_index == .
+						sort year
+						by year: egen dropit				= sum(missing)
+						//drop if index_hat==. & r_house == .
+						//drop if dropit > 0   & r_house == .
+						drop dropit missing
+						
 					** Fill monthly r_house
 					gen double implied_rate 			= implied_rent2 * 12 / house_price
 					replace r_house 					= implied_rate if r_house==. & implied_rate ~= .
@@ -1355,18 +1603,30 @@ program 			define 	NBPrep
 					sum index_hat  if year == 2015 & month ==12
 					local ind = r(mean)
 						di "Scaling `ind' to `impl'."
-					gen double implied_rent3 			= index_hat / `ind' * `impl'
-					replace r_house 					= implied_rent3 * 12 / house_price if r_house == . & implied_rent3 ~=.
-					rename implied_rent3 net_rent
-					drop implied_rent* index_* rent_index
+					gen double implied_rent5 			= index_hat / `ind' * `impl'
+					replace r_house 					= implied_rent5 * 12 / house_price if r_house == . & implied_rent5 ~=.
+					rename implied_rent5 net_rent
+					drop implied_rent* index_* 
 					
-					** Order and keep
-					order	year month r_house net_rent
-					keep 	year month r_house net_rent
+					** Back-interpolate gross_rent
+					//gen gross_rent 						= rent_index
+					//reg gross_rent c.t##c.house_units##c.net_rent //##c.t##c.house_units##c.house_units dividend r_priceR cpi gdp pop net_rent 
+					//predict gross_hat, xb
+					** Anchor to net rent and rent index here -- see New r_house code
+					
+					** Order and save house CAPE data
+					order year month house_price net_rent
+					cd_nb_stage
+					savesome year month house_price net_rent using housing_CAPE_data, replace
+					
+					** Order and keep for join
+					order	year month r_house net_*
+					keep 	year month r_house net_* 
 					
 					** Save for join
 					cd_nb_stage
 					save r_house_join, replace
+					use r_house_join, clear
 					
 					** Load and join
 					cd_nb_stage
@@ -1384,9 +1644,9 @@ program 			define 	NBPrep
 					
 					** Order
 					order year month t w_* r_* house_* *_rent
-					order h_incl *_orig, last
+					order *_include *_orig, last
 					
-					** Rename
+					** Rename gross_rent -- If you need to interpolate, back-interpolate from net_rent above
 					rename rent_index gross_rent
 										
 				} //end if
@@ -1403,6 +1663,35 @@ program 			define 	NBPrep
 				** Save CPI, GDP, POP for Covariate run - 2nd run
 				cd_nb_stage
 				savesome year month cpi gdp pop r_price r_priceR using treas_covariates, replace
+				use treas_covariates, clear
+				
+				** Housing CAPE prep
+				** Inputs to housing_ie_data "Data" tab paste
+				** Load and paste into xls
+				cd_nb_stage
+				use housing_CAPE_data, clear //Paste into excel sheet 
+				
+				** Prep Schiller CAPE comparison 
+				** Stocks
+				cd_nb_shiller
+				import excel "ie_data.xls", sheet("regData") cellrange(A8:c1739) firstrow clear
+				renvars *, lower
+					sum
+				** Save
+				cd_nb_stage
+				save stock_CAPE_reg, replace
+				
+				** Houses -- after paste above
+				cd_nb_shiller
+				import excel "house_ie_data.xls", sheet("regData") cellrange(A8:c1616) firstrow clear
+				renvars *, lower
+					sum
+				** Save
+				cd_nb_stage
+				save house_CAPE_reg, replace
+				
+				reg returns yield
+				
 				
 			} //end if
 			di "Done with join for analysis."
