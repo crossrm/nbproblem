@@ -610,7 +610,7 @@ program 			define 	NBProblem
 					** Acceleration+ (Velocity of r is (intrinsic) real-acceleration of housing wealth)
 					** General rocket + gravity
 					////////////
-					scalar gen_accel = 1
+					scalar gen_accel = 1111
 					if gen_accel == 1 {
 						
 						** Load
@@ -975,19 +975,66 @@ program 			define 	NBProblem
 						acc_ddot_house acc_sdot_house lag_v_dot_house) if year >= 1981
 										
 					********************************
-					** Excess Housing CAPE Index
+					** Excess Housing CAPE Index 
+					** Shiller-prepared data - 17%
 					********************************
 					cd_nb_stage
 					use house_CAPE_reg, clear
 					scatter yield returns date
 					reg returns yield if date >= 1891.01 & date <= 2014.12 //, vce(rubust)
 					
+					********************************
 					** Excess Stock CAPE
-					cd_nb_stage
+					** Shiller-prepared data - 23.5%
+					********************************
 					use stock_CAPE_reg, clear
 						sum *
 					scatter yield returns date
 					reg returns yield if date >= 1891.01 & date <= 2014.12 //, vce(rubust)
+					
+					********************************
+					** Reproduce Stock CAPE - 28.99 R2
+					********************************
+					** Reload
+					cd_nb_stage
+					use arima_data, clear
+					
+					** Prep for OOS
+					rename incl include
+					*keep if include > 6		//can use jolt on v if incl > 6
+
+					** Total return forecast
+					** TRR "stock" years_future years_past cpi_year cpi_month minimum_n seed
+					TRF "stock" 10 10 2024 12 1 10
+									
+					********************************
+					** Reproduce House CAPE - R-squared 23.96 obs 1357
+					********************************
+					** Reload
+					cd_nb_stage
+					use arima_data, clear
+					
+					** Prep for OOS
+					rename incl include
+					
+					** Rename - utilize above section code
+					** Rename stock terms - forward
+					rename dividend temp_div
+					rename earnings temp_ern
+					//rename p_stock	temp_psto
+					** Rename house terms - forward
+					//rename p_house p_stock
+					rename net_rent dividends
+					gen    earnings = dividends
+					** Drop first year
+					drop if n<=12
+					replace n = n - 12
+										
+					** Total return forecast
+					** TRR "stock" years_future years_past cpi_year cpi_month min_n 
+					TRF "house" 10 10 2024 12 679 10
+					
+					asdf_diff_earnings vs stock earnings
 					
 				} //end if
 				di "Done with CAPE and SUR."

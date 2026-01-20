@@ -930,8 +930,8 @@ program 			define 	NBPrep
 				gen n1						= _n
 				sort n1
 				tsset n1
-				gen double cpi_lag1				= L12.cpi 
-				gen double r_price					= (cpi - cpi_lag1) / cpi_lag1 //* 12
+				gen double cpi_lag1			= L12.cpi 
+				gen double r_price			= (cpi - cpi_lag1) / cpi_lag1 //* 12
 				replace r_price				= r_price * 100
 					sum r_price
 					
@@ -1449,7 +1449,7 @@ program 			define 	NBPrep
 							order year month r_house house_price house_units t period rent_index implied_rent mean_index implied_rent2 index_hat*   implied_gain implied_infl index_infl h_include 
 									
 						** Compare annual indexed inflation to implied inflation and correct
-						gen semiyear							= year + 0.5 * (month >= 1 & month <= 6)
+						gen semiyear							= year + 0.5 * (month >= 7 & month <= 12) //(month >= 1 & month <= 6)
 						order semiyear
 						sort semiyear t
 						by semiyear: egen double index_ann		= sum(index_infl)
@@ -1595,7 +1595,8 @@ program 			define 	NBPrep
 					** Fill monthly r_house
 					gen double implied_rate 			= implied_rent2 * 12 / house_price
 					replace r_house 					= implied_rate if r_house==. & implied_rate ~= .
-					drop implied_rent2 implied_rate
+					drop implied_rate
+					rename implied_rent2 net_rent 
 					
 					** Fill later-years r_house > 2015
 					sum implied_rent if year == 2015 & month ==12
@@ -1605,7 +1606,18 @@ program 			define 	NBPrep
 						di "Scaling `ind' to `impl'."
 					gen double implied_rent5 			= index_hat / `ind' * `impl'
 					replace r_house 					= implied_rent5 * 12 / house_price if r_house == . & implied_rent5 ~=.
-					rename implied_rent5 net_rent
+					replace net_rent					= implied_rent5 if net_rent==. & implied_rent5 ~=.
+					replace net_rent 					= net_rent * 12
+					
+						** Dev temp
+						order qyear year month r_house house_price house_units t period net_rent rent_index implied_rent* index_hat*  gain cumul_corr h_include 
+					
+						** Audit r_house
+						gen test_r_house				= net_rent * 12 / house_price
+						order r_house test_r_house
+						sum year month *r_house if r_house ~= test_r_house
+						drop test_r_house
+					
 					drop implied_rent* index_* 
 					
 					** Back-interpolate gross_rent
@@ -1648,7 +1660,8 @@ program 			define 	NBPrep
 					
 					** Rename gross_rent -- If you need to interpolate, back-interpolate from net_rent above
 					rename rent_index gross_rent
-										
+					replace gross_rent					= gross_rent * 12
+															
 				} //end if
 				di "Done with monthly variation."
 				
@@ -1671,7 +1684,7 @@ program 			define 	NBPrep
 				cd_nb_stage
 				use housing_CAPE_data, clear //Paste into excel sheet 
 				
-				** Prep Schiller CAPE comparison 
+				** Prep Shiller CAPE comparison 
 				** Stocks
 				cd_nb_shiller
 				import excel "ie_data.xls", sheet("regData") cellrange(A8:c1739) firstrow clear
@@ -1680,7 +1693,14 @@ program 			define 	NBPrep
 				** Save
 				cd_nb_stage
 				save stock_CAPE_reg, replace
-				
+					
+					** Preliminary look at Shiller-prepared data (R-squared 28.99 1380 obs)
+					reg returns yield if date >=1900 & date<=2015
+					sum * if date >=1900 & date<=2015
+					** Compare housing time period
+					reg returns yield if date>=1947.07 & date<2014
+					sum * if date>=1900.12 & date<2014
+					
 				** Houses -- after paste above
 				cd_nb_shiller
 				import excel "house_ie_data.xls", sheet("regData") cellrange(A8:c1616) firstrow clear
@@ -1690,9 +1710,14 @@ program 			define 	NBPrep
 				cd_nb_stage
 				save house_CAPE_reg, replace
 				
-				reg returns yield
-				
-				
+					** Preliminary look at Shiller-prepared data (R-squared 23.96 obs 1357)
+					reg returns yield if date>=1900.12 & date<2014
+					sum * if date>=1900.12 & date<2014
+					
+					reg returns yield if date>=1947.07 & date<2014
+					sum * if date>=1947.07 & date<2014
+					sum * if returns~=.
+												
 			} //end if
 			di "Done with join for analysis."
 					
