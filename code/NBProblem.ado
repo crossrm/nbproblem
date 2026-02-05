@@ -983,74 +983,221 @@ program 			define 	NBProblem
 					scatter yield returns date
 					reg returns yield if date >= 1891.01 & date <= 2014.12 //, vce(rubust)
 					
-					********************************
-					** Excess Stock CAPE
-					** Shiller-prepared data - 23.5%
-					********************************
-					use stock_CAPE_reg, clear
-						sum *
-					scatter yield returns date
-					reg returns yield if date >= 1891.01 & date <= 2014.12 //, vce(rubust)
-					
-					********************************
-					** Reproduce Stock CAPE - 28.99 R2
-					********************************
-					** Reload
-					cd_nb_stage
-					use arima_data, clear
-					
-					** Prep for OOS
-					rename incl include
-					*keep if include > 6		//can use jolt on v if incl > 6
+					** Stock CAPE
+					local scape = 1
+					if `scape' == 1 {
+						
+						********************************
+						** Excess Stock CAPE
+						** Shiller-prepared data - 23.5%
+						********************************
+						use stock_CAPE_reg, clear
+							sum *
+						scatter yield returns date
+						reg returns yield if date >= 1891.01 & date <= 2014.12 //, vce(rubust)
+						
+						********************************
+						** Reproduce Stock CAPE - 28.99 R2
+						********************************
+						** Reload
+						cd_nb_stage
+						use arima_data, clear
+						
+						** Prep for OOS
+						rename incl include
+						*keep if include > 6		//can use jolt on v if incl > 6
 
-					** Total return forecast
-					** TRR "stock" years_future years_past cpi_year cpi_month minimum_n seed
-					TRF "stock" 10 1 2024 12 1 10
-						
-					********************************
-					** Gridsearch Stock CAPE - R-squared 
-					********************************
-					matrix table_oos = 	J(6, 20, .)
-					matrix table_is = 	table_oos
-						matrix list table_oos
-						matrix list table_is
-						
-					** Lookback Loop
-					foreach pasty of numlist 0/5 {
-						** Lookforward Loop
-						foreach futury of numlist 10/20 {
+						** Total return forecast
+						** TRR "stock" years_future years_past cpi_year cpi_month minimum_n seed
+						TRF "stock" 9 3 2024 12 1 101
 							
-							** TRR "stock" years_future years_past cpi_year cpi_month min_n 
-							TRF "stock" `futury' `pasty' 2024 12 1 10
+						********************************
+						** Gridsearch Years Stock CAPE - R-squared 
+						********************************
+						matrix table_oos = 	J(10, 35, .)
+						matrix table_is = 	table_oos
+							matrix list table_oos
+							matrix list table_is
 							
-							matrix table_oos[`pasty',`futury'] 	= r2_0
-							matrix table_is[`pasty',`futury']	= r2_1
+						** Lookback Loop
+						foreach pasty of numlist 1/10 {
+							** Lookforward Loop
+							foreach futury of numlist 5/35 {
 								
-						} //end floop
-						di "Done with future loop."
+								** TRR "stock" years_future years_past cpi_year cpi_month min_n 
+								TRF "stock" `futury' `pasty' 2024 12 1 101
+								
+								matrix table_oos[`pasty',`futury'] 	= r2_0
+								matrix table_is[`pasty',`futury']	= r2_1
+									
+							} //end floop
+							di "Done with future loop."
+							
+						} //end past loop
+						di "Done with loops."
 						
-					} //end past loop
-					di "Done with loops."
-					
-					matrix list table_oos
-					matrix list table_is	
-					
-					** Save matrix
-					clear
-					svmat double table_oos, names(futy)
-					gen lookback				= _n
-					order lookback
-					** Save data
-					cd_nb_results
-					save Stock_CAPE_OOS, replace
-					** Save matrix
-					clear
-					svmat double table_is, names(futy)
-					gen lookback				= _n
-					order lookback
-					** Save data
-					cd_nb_results
-					save Stock_CAPE_IS, replace
+						matrix list table_oos
+						matrix list table_is	
+						
+						** Save matrix
+						clear
+						svmat double table_oos, names(futy)
+						gen lookback				= _n
+						order lookback
+						** Save data
+						cd_nb_results
+						save Stock_CAPE_OOS, replace
+						** Save matrix
+						clear
+						svmat double table_is, names(futy)
+						gen lookback				= _n
+						order lookback
+						** Save data
+						cd_nb_results
+						save Stock_CAPE_IS, replace
+						
+						********************************
+						** Gridsearch Months Stock CAPE - R-squared 
+						********************************
+						** Reload
+						cd_nb_stage
+						use arima_data, clear
+						
+						** Prep for OOS
+						rename incl include
+											
+						matrix table_oos = 	J(120, 168, .)
+						matrix table_is = 	table_oos
+							matrix list table_oos
+							matrix list table_is
+							
+						** Lookback Loop
+						foreach pasty of numlist 1/120 {
+							** Lookforward Loop
+							foreach futury of numlist 48/168 {
+								
+								** TRR "stock" years_future years_past cpi_year cpi_month min_n 
+								TRFmo "stock" `futury' `pasty' 2024 12 1 101 //11111
+								
+								matrix table_oos[`pasty',`futury'] 	= r2_0
+								matrix table_is[`pasty',`futury']	= r2_1
+									
+							} //end floop
+							di "Done with future loop."
+							
+						} //end past loop
+						di "Done with loops."
+						
+						matrix list table_oos
+						matrix list table_is	
+						
+						** Save matrix
+						clear
+						svmat double table_oos, names(futm)
+						gen lookback				= _n
+						order lookback
+						drop futm1-futm72					
+						** Save data
+						cd_nb_results
+						save Stock_Month_CAPE_OOS, replace
+						use Stock_Month_CAPE_OOS, clear
+						
+						** Look
+						** Reshape
+						rename lookback pastm
+						reshape long futm, i(pastm) j(future_month)
+						rename futm R2
+						drop if R2==.
+						** Plot
+						twoway contour R2 pastm future_month
+						
+						** Save matrix
+						clear
+						svmat double table_is, names(futm)
+						gen lookback				= _n
+						order lookback
+						drop futm1-futm72					
+						** Save data
+						cd_nb_results
+						save Stock_Month_CAPE_IS, replace
+						use Stock_Month_CAPE_IS, clear
+
+						** Look
+						** Reshape
+						rename lookback pastm
+						reshape long futm, i(pastm) j(future_month)
+						rename futm R2
+						drop if R2==.
+						** Plot
+						twoway contour R2 pastm future_month
+						
+						asdf_stocks
+						
+						********************************
+						** Bootstrap estimates
+						********************************
+						** Reload
+						cd_nb_stage
+						use arima_data, clear
+						
+						** Prep for OOS
+						rename incl include
+						
+						** TRR "stock" 	years_future 	years_past 	cpi_year	cpi_month 	min_n 	seed
+						TRFmo "stock" 	120 			0 			2024 		12 			1 	10 //11111
+						*bootstrap att = r2_0, reps(50) seed(1011): TRFmo "house" 336 1 2024 12 679 1011
+		
+						** Bootstrap 95% CI for OOS R-squared
+						matrix table_oos 	= 	J(200, 1, .)
+						matrix table_is 	= 	table_oos
+						matrix beta_mat		= 	table_is
+						
+							matrix list table_oos
+						
+						** Loop
+						local sed 			= 1
+						scalar mean_oos		= 0
+						scalar mean_is		= 0
+						scalar mean_beta	= 0
+						foreach k of numlist 1/200 {
+							
+							TRFmo "stock" 336 0 2024 12 679 `sed'
+						
+							** Record
+							matrix table_oos[`sed',1] 	= r2_0
+							matrix table_is[`sed',1]	= r2_1
+							matrix beta_mat[`sed',1]	= beta
+						
+							** Advance seed
+							local sed 					= `sed' + 1
+							scalar mean_oos		= mean_oos + r2_0 
+							scalar mean_is		= mean_is + r2_1 
+							scalar mean_beta	= mean_beta + beta
+							
+						} //end loop
+						di "Done with CI loop."
+						
+						** Display CIs
+						mata: st_matrix("table_oos", sort(st_matrix("table_oos"), 1))
+						mata: st_matrix("table_is", sort(st_matrix("table_is"), 1))
+						mata: st_matrix("beta_mat", sort(st_matrix("beta_mat"), 1))
+						local mean_oos			= mean_oos / 200
+						local mean_is			= mean_is / 200
+						local mean_beta			= mean_beta / 200
+						local upper_r2_OOS		= table_oos[195,1]
+						local lower_r2_OOS		= table_oos[5,1]
+						local upper_r2_IS		= table_is[195,1]
+						local lower_r2_IS		= table_is[5,1]
+						local upper_beta		= beta_mat[195,1]
+						local lower_beta		= beta_mat[5,1]
+						
+							di "MeanOOS: `mean_oos', LowerOOS: `lower_r2_OOS', UpperOOS: `upper_r2_OOS'."
+							di "MeanIS: `mean_is', LowerIS: `lower_r2_IS', UpperIS: `upper_r2_IS'."
+							di "Betamean: `mean_beta', Lowerbeta: `lower_beta', Upperbeta: `upper_beta'."
+												
+						
+					} //end if
+					di "Done with Stock CAPE."
 					
 					********************************
 					** Reproduce House CAPE - R-squared 23.96 obs 1357
@@ -1076,9 +1223,10 @@ program 			define 	NBProblem
 					replace n = n - 12
 										
 					** Total return forecast
-					** TRR "stock" years_future years_past cpi_year cpi_month min_n 
-					TRF "house" 19 1 2024 12 679 1011111
-					TRFmo "house" 228 12 2024 12 679 1011111
+					** TRF "asset" 		years_future years_past 	cpi_year cpi_month min_n seed 
+					** TRFmo "asset" 	months_future months_past 	cpi_year cpi_month min_n seed
+					TRF "house" 	19 	1 	2024 12 679 1011111
+					TRFmo "house" 	228 12 	2024 12 679 1011111
 					
 					********************************
 					** Gridsearch Years House CAPE - R-squared 
@@ -1087,7 +1235,7 @@ program 			define 	NBProblem
 					matrix table_is = 	table_oos
 						matrix list table_oos
 						matrix list table_is
-						
+										
 					** Lookback Loop
 					foreach pasty of numlist 1/10 {
 						** Lookforward Loop
