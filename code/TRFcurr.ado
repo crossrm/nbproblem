@@ -8,13 +8,13 @@
 
 ***********************************************************
 ***********************************************************
-capture program 	drop 	TRF
-program 			define 	TRF
+capture program 	drop 	TRFcurr
+program 			define 	TRFcurr
 
 	** Read inputs
 	local targetvar 			= "`1'"
-	local years_future		 	= "`2'"		
-	local years_past			= "`3'"
+	local months_future		 	= "`2'"		
+	local months_past			= "`3'"
 	local cpi_year				= "`4'"
 	local cpi_month				= "`5'"
 	local min_n					= "`6'"
@@ -55,8 +55,8 @@ program 			define 	TRF
 	********************************
 	
 	** Time locals - convert to months
-	local years_future = `years_future'*12
-	local years_past = `years_past'*12
+	//local months_future = `months_future'*12
+	//local months_past = `months_past'*12
 	
 	** Prep
 	order n year month p_`targetvar' dividend earnings cpi r_bond
@@ -80,13 +80,13 @@ program 			define 	TRF
 		*di "Start CAPE: `targetvar'."
 	
 	** Cyclically adjusted CAPE - past earnings
-	quietly tssmooth ma ma_earningsr 		= earningsr, window(`years_past')
-	quietly replace ma_earningsr			= . if n<=`years_past'
+	quietly tssmooth ma ma_earningsr 		= earningsr, window(`months_past')
+	quietly replace ma_earningsr			= . if n<=`months_past'
 	quietly gen ca_cape						= p_`targetvar'r / ma_earningsr
-		*di "Start Excess: `years_past'."
+		*di "Start Excess: `months_past'."
 	
 	** Excess cape - see Shiller ie_data "Q" - past inflation
-	quietly gen ex_cape						= 1/ca_cape - (r_bond/100 - ((cpi / L`years_past'.cpi)^(1/10)-1))
+	quietly gen ex_cape						= 1/ca_cape - (r_bond/100 - ((cpi / L`months_past'.cpi)^(1/10)-1))
 	
 	** Real total bond returns - no large lags - 1200 is from the 10-year bond (12 mo x 10 yrs )
 	quietly gen mo_bond						= (r_bond/F.r_bond + r_bond/1200 + ((1+F.r_bond/1200)^(-119))*(1-r_bond/F.r_bond))
@@ -94,8 +94,8 @@ program 			define 	TRF
 	quietly replace trtnp_bondr				= L.trtnp_bondr * L.mo_bond * L.cpi / cpi if n>1
 		
 	** Future target and bond returns - future years
-	quietly gen rtns_`targetvar'r			= (F`years_future'.trtnp_`targetvar'r / trtnp_`targetvar'r)^(1/10)-1
-	quietly gen rtns_bondr					= (F`years_future'.trtnp_bondr / trtnp_bondr)^(1/10)-1
+	quietly gen rtns_`targetvar'r			= (F`months_future'.trtnp_`targetvar'r / trtnp_`targetvar'r)^(1/10)-1
+	quietly gen rtns_bondr					= (F`months_future'.trtnp_bondr / trtnp_bondr)^(1/10)-1
 	quietly gen ex_return					= rtns_`targetvar'r - rtns_bondr
 	
 		order n year month p_`targetvar'* dividend* earnings* cpi r_bond trtnp_* mo_* ma_* ca_*  ex_* rtns*

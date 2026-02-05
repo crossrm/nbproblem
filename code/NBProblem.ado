@@ -1005,8 +1005,53 @@ program 			define 	NBProblem
 
 					** Total return forecast
 					** TRR "stock" years_future years_past cpi_year cpi_month minimum_n seed
-					TRF "stock" 10 10 2024 12 1 10
-									
+					TRF "stock" 10 1 2024 12 1 10
+						
+					********************************
+					** Gridsearch Stock CAPE - R-squared 
+					********************************
+					matrix table_oos = 	J(6, 20, .)
+					matrix table_is = 	table_oos
+						matrix list table_oos
+						matrix list table_is
+						
+					** Lookback Loop
+					foreach pasty of numlist 0/5 {
+						** Lookforward Loop
+						foreach futury of numlist 10/20 {
+							
+							** TRR "stock" years_future years_past cpi_year cpi_month min_n 
+							TRF "stock" `futury' `pasty' 2024 12 1 10
+							
+							matrix table_oos[`pasty',`futury'] 	= r2_0
+							matrix table_is[`pasty',`futury']	= r2_1
+								
+						} //end floop
+						di "Done with future loop."
+						
+					} //end past loop
+					di "Done with loops."
+					
+					matrix list table_oos
+					matrix list table_is	
+					
+					** Save matrix
+					clear
+					svmat double table_oos, names(futy)
+					gen lookback				= _n
+					order lookback
+					** Save data
+					cd_nb_results
+					save Stock_CAPE_OOS, replace
+					** Save matrix
+					clear
+					svmat double table_is, names(futy)
+					gen lookback				= _n
+					order lookback
+					** Save data
+					cd_nb_results
+					save Stock_CAPE_IS, replace
+					
 					********************************
 					** Reproduce House CAPE - R-squared 23.96 obs 1357
 					********************************
@@ -1026,14 +1071,202 @@ program 			define 	NBProblem
 					//rename p_house p_stock
 					rename net_rent dividends
 					gen    earnings = dividends
-					** Drop first year
+					** Drop first year (invalid data)
 					drop if n<=12
 					replace n = n - 12
 										
 					** Total return forecast
 					** TRR "stock" years_future years_past cpi_year cpi_month min_n 
-					TRF "house" 10 10 2024 12 679 10
+					TRF "house" 19 1 2024 12 679 1011111
+					TRFmo "house" 228 12 2024 12 679 1011111
 					
+					********************************
+					** Gridsearch Years House CAPE - R-squared 
+					********************************
+					matrix table_oos = 	J(10, 35, .)
+					matrix table_is = 	table_oos
+						matrix list table_oos
+						matrix list table_is
+						
+					** Lookback Loop
+					foreach pasty of numlist 1/10 {
+						** Lookforward Loop
+						foreach futury of numlist 25/35 {
+							
+							** TRR "stock" years_future years_past cpi_year cpi_month min_n 
+							TRF "house" `futury' `pasty' 2024 12 679 10 //11111
+							
+							matrix table_oos[`pasty',`futury'] 	= r2_0
+							matrix table_is[`pasty',`futury']	= r2_1
+								
+						} //end floop
+						di "Done with future loop."
+						
+					} //end past loop
+					di "Done with loops."
+					
+					matrix list table_oos
+					matrix list table_is	
+					
+					** Save matrix
+					clear
+					svmat double table_oos, names(futy)
+					gen lookback				= _n
+					order lookback
+					** Save data
+					cd_nb_results
+					save House_CAPE_OOS, replace
+					** Save matrix
+					clear
+					svmat double table_is, names(futy)
+					gen lookback				= _n
+					order lookback
+					** Save data
+					cd_nb_results
+					save House_CAPE_IS, replace
+										
+					********************************
+					** Gridsearch Months House CAPE - R-squared 
+					********************************
+					** Reload
+					cd_nb_stage
+					use arima_data, clear
+					
+					** Prep for OOS
+					rename incl include
+					
+					** Rename - utilize above section code
+					** Rename stock terms - forward
+					rename dividend temp_div
+					rename earnings temp_ern
+					//rename p_stock	temp_psto
+					** Rename house terms - forward
+					//rename p_house p_stock
+					rename net_rent dividends
+					gen    earnings = dividends
+					** Drop first year (invalid data)
+					drop if n<=12
+					replace n = n - 12
+										
+					matrix table_oos = 	J(24, 341, .)
+					matrix table_is = 	table_oos
+						matrix list table_oos
+						matrix list table_is
+						
+					** Lookback Loop
+					foreach pasty of numlist 1/12 {
+						** Lookforward Loop
+						foreach futury of numlist 321/341 {
+							
+							** TRR "stock" years_future years_past cpi_year cpi_month min_n 
+							TRFmo "house" `futury' `pasty' 2024 12 679 101 //11111
+							
+							matrix table_oos[`pasty',`futury'] 	= r2_0
+							matrix table_is[`pasty',`futury']	= r2_1
+								
+						} //end floop
+						di "Done with future loop."
+						
+					} //end past loop
+					di "Done with loops."
+					
+					matrix list table_oos
+					matrix list table_is	
+					
+					** Save matrix
+					clear
+					svmat double table_oos, names(futm)
+					gen lookback				= _n
+					order lookback
+					drop futm1-futm320					
+					** Save data
+					cd_nb_results
+					save House_Month_CAPE_OOS, replace
+					** Save matrix
+					clear
+					svmat double table_is, names(futm)
+					gen lookback				= _n
+					order lookback
+					drop futm1-futm320					
+					** Save data
+					cd_nb_results
+					save House_Month_CAPE_IS, replace
+					
+					********************************
+					** Bootstrap estimates
+					********************************
+					** Reload
+					cd_nb_stage
+					use arima_data, clear
+					
+					** Prep for OOS
+					rename incl include
+					
+					** Rename - utilize above section code
+					** Rename stock terms - forward
+					rename dividend temp_div
+					rename earnings temp_ern
+					//rename p_stock	temp_psto
+					** Rename house terms - forward
+					//rename p_house p_stock
+					rename net_rent dividends
+					gen    earnings = dividends
+					** Drop first year (invalid data)
+					drop if n<=12
+					replace n = n - 12
+					
+					** TRR "stock" years_future years_past cpi_year cpi_month min_n 
+					TRFmo "house" 336 0 2024 12 679 1011 //11111
+					*bootstrap att = r2_0, reps(50) seed(1011): TRFmo "house" 336 1 2024 12 679 1011
+	
+					** Bootstrap 95% CI for OOS R-squared
+					matrix table_oos 	= 	J(200, 1, .)
+					matrix table_is 	= 	table_oos
+					matrix beta_mat		= 	table_is
+					
+						matrix list table_oos
+					
+					** Loop
+					local sed 			= 1
+					scalar mean_oos		= 0
+					scalar mean_is		= 0
+					scalar mean_beta	= 0
+					foreach k of numlist 1/200 {
+						
+						TRFmo "house" 336 0 2024 12 679 `sed'
+					
+						** Record
+						matrix table_oos[`sed',1] 	= r2_0
+						matrix table_is[`sed',1]	= r2_1
+						matrix beta_mat[`sed',1]	= beta
+					
+						** Advance seed
+						local sed 					= `sed' + 1
+						scalar mean_oos		= mean_oos + r2_0 
+						scalar mean_is		= mean_is + r2_1 
+						scalar mean_beta	= mean_beta + beta
+						
+					} //end loop
+					di "Done with CI loop."
+					
+					** Display CIs
+					mata: st_matrix("table_oos", sort(st_matrix("table_oos"), 1))
+					mata: st_matrix("table_is", sort(st_matrix("table_is"), 1))
+					mata: st_matrix("beta_mat", sort(st_matrix("beta_mat"), 1))
+					local mean_oos			= mean_oos / 200
+					local mean_is			= mean_is / 200
+					local mean_beta			= mean_beta / 200
+					local upper_r2_OOS		= table_oos[195,1]
+					local lower_r2_OOS		= table_oos[5,1]
+					local upper_r2_IS		= table_is[195,1]
+					local lower_r2_IS		= table_is[5,1]
+					local upper_beta		= beta_mat[195,1]
+					local lower_beta		= beta_mat[5,1]
+					
+						di "MeanOOS: `mean_oos', LowerOOS: `lower_r2_OOS', UpperOOS: `upper_r2_OOS'."
+						di "MeanIS: `mean_is', LowerIS: `lower_r2_IS', UpperIS: `upper_r2_IS'."
+						di "Betamean: `mean_beta', Lowerbeta: `lower_beta', Upperbeta: `upper_beta'."
+												
 					asdf_diff_earnings vs stock earnings
 					
 				} //end if

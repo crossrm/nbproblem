@@ -37,7 +37,7 @@ program 			define 			fit_nb, rclass
 		scalar tss				=	r(mean)
 		scalar r2				=	1- (ess / tss)
 			di ""
-		scalar list ess tss r2
+		///scalar list ess tss r2
 		
 		** Corr method
 		quietly corr `s' yhat if (incl==`incl' & yhat~=.)
@@ -49,7 +49,7 @@ program 			define 			fit_nb, rclass
 		** Store stats for ratio -- r2 for SS method, R2 for corr method
 		scalar r2_`incl'		= R2	//r2  
 		
-			sum ehat ESS TSS yhat `s' year if incl==`incl'
+			//sum ehat ESS TSS yhat `s' year if incl==`incl'
 		drop ehat ESS TSS yhat
 				
 	} //end loop
@@ -60,5 +60,10 @@ program 			define 			fit_nb, rclass
 		di "Resulting overfitting loss percentage: "
 		di ""
 	scalar list r2_1 r2_0 loss
+	
+	** Return values (rclass program)
+	return scalar r2_0 		= r2_0
+	return scalar r2_1 		= r2_1
+	
 	
 end
