@@ -1059,80 +1059,302 @@ program 			define 	NBProblem
 						********************************
 						** Gridsearch Months Stock CAPE - R-squared 
 						********************************
-						** Reload
-						cd_nb_stage
-						use arima_data, clear
-						
-						** Prep for OOS
-						rename incl include
-											
-						matrix table_oos = 	J(120, 168, .)
-						matrix table_is = 	table_oos
-							matrix list table_oos
-							matrix list table_is
+						local gridd = 1
+						if `gridd' == 1 {
+								
+							** Count var
+							local counnt 		= 1
 							
-						** Lookback Loop
-						foreach pasty of numlist 1/120 {
-							** Lookforward Loop
-							foreach futury of numlist 48/168 {
+							** Crude MC search by incrementing seed	
+							foreach seed of numlist 1/10 {
 								
-								** TRR "stock" years_future years_past cpi_year cpi_month min_n 
-								TRFmo "stock" `futury' `pasty' 2024 12 1 101 //11111
 								
-								matrix table_oos[`pasty',`futury'] 	= r2_0
-								matrix table_is[`pasty',`futury']	= r2_1
+								** Reload
+								cd_nb_stage
+								use arima_data, clear
+								
+								** Prep for OOS
+								rename incl include
+													
+								matrix table_oos	 	= 	J(1000, 1000, .)
+								matrix table_is 		= 	table_oos
+								matrix table_is_beta 	= 	table_oos
+								matrix table_is_dw		= 	table_oos
+									*matrix list table_oos
+									*matrix list table_is
 									
-							} //end floop
-							di "Done with future loop."
-							
-						} //end past loop
-						di "Done with loops."
-						
-						matrix list table_oos
-						matrix list table_is	
-						
-						** Save matrix
-						clear
-						svmat double table_oos, names(futm)
-						gen lookback				= _n
-						order lookback
-						drop futm1-futm72					
-						** Save data
-						cd_nb_results
-						save Stock_Month_CAPE_OOS, replace
-						use Stock_Month_CAPE_OOS, clear
-						
-						** Look
-						** Reshape
-						rename lookback pastm
-						reshape long futm, i(pastm) j(future_month)
-						rename futm R2
-						drop if R2==.
-						** Plot
-						twoway contour R2 pastm future_month
-						
-						** Save matrix
-						clear
-						svmat double table_is, names(futm)
-						gen lookback				= _n
-						order lookback
-						drop futm1-futm72					
-						** Save data
-						cd_nb_results
-						save Stock_Month_CAPE_IS, replace
-						use Stock_Month_CAPE_IS, clear
+								** Check observations
+								*TRFmo "stock" 780 780 2024 12 1 101 // 42 monthly obs
+								*TRFmo "stock" 420 600 2024 12 1 101 // 276 monthly obs
+									
+								** Lookback Loop
+								foreach pasty of numlist 12(60)732 {
+									** Lookforward Loop
+									foreach futury of numlist 12(60)732 {
+										
+										** TRR "stock" years_future years_past cpi_year cpi_month min_n 
+										TRFmo "stock" `futury' `pasty' 2024 12 1 `seed' //11111
+										
+										matrix table_oos[`pasty',`futury'] 	= r2_0
+										matrix table_is[`pasty',`futury']	= r2_1
+											
+									} //end floop
+									di "Done with future loop."
+									
+								} //end past loop
+								di "Done with loops."
+								
+								*matrix list table_oos
+								*matrix list table_is	
+								
+								** Save matrix
+								clear
+								svmat double table_oos, names(futm)
+								gen lookback				= _n
+								order lookback
+								*drop futm1-futm72					
+								** Save data
+								cd_nb_stage
+								*save Stock_Month_CAPE_OOS, replace
+								*use Stock_Month_CAPE_OOS, clear
+								
+								** Reshape
+								rename lookback pastm
+								reshape long futm, i(pastm) j(future_month)
+								rename futm R2
+								drop if R2==.
+								
+								** Save and Append
+								cd_nb_stage
+								*save Stock_Month_CAPE_OOS_Long, replace
+								** Append
+								if `counnt' > 1 {
+								
+									** Append
+									gen seed			= `seed'
+									cd_nb_stage
+									append using join_master_OOS.dta
+									
+									** Save
+									cd_nb_stage
+									save join_master_OOS, replace
+																								
+								} //end if
+								else {
+									
+									** Save
+									gen seed			= `seed'
+									cd_nb_stage
+									save join_master_OOS, replace
+									
+								} //end else
+								di "Done with save and join."
+								
+								** Plot
+								*twoway contour R2 pastm future_month, levels(30)  zlabel(, format(%9.2f))
+								
+								** Save matrix
+								clear
+								svmat double table_is, names(futm)
+								gen lookback				= _n
+								order lookback
+								*drop futm1-futm72					
+								** Save data
+								cd_nb_stage
+								*save Stock_Month_CAPE_IS, replace
+								*use Stock_Month_CAPE_IS, clear
+								
+								** Reshape
+								rename lookback pastm
+								reshape long futm, i(pastm) j(future_month)
+								rename futm R2
+								drop if R2==.
+								
+								** Save and Append
+								cd_nb_stage
+								*save Stock_Month_CAPE_IS_Long, replace
+								** Append
+								if `counnt' > 1 {
+								
+									** Append
+									gen seed			= `seed'
+									cd_nb_stage
+									append using join_master_IS.dta
+									
+									** Save
+									cd_nb_stage
+									save join_master_IS, replace
+																		
+								} //end if
+								else {
+									
+									** Save
+									gen seed			= `seed'
+									cd_nb_stage
+									save join_master_IS, replace
+									
+								} //end else
+								di "Done with save and join."
+								
+								** Advance count
+								local counnt 			= `counnt' + 1
+																
+							} //end loop
+							di "Done with MC loop."
 
-						** Look
-						** Reshape
-						rename lookback pastm
-						reshape long futm, i(pastm) j(future_month)
-						rename futm R2
-						drop if R2==.
-						** Plot
-						twoway contour R2 pastm future_month
+							** Record Stats
+							matrix table_oos_R 		= 	J(1000, 1000, .)
+							matrix table_is_R 		= 	table_oos
+							matrix table_oos_Sig 	= 	table_oos
+							matrix table_is_Sig		= 	table_oos
+							** Beta and DW
+							matrix table_is_Beta	= 	table_oos
+							matrix table_is_DW		= 	table_oos
+							
+							** Plot and Save IS
+							local IS = 1
+							if `IS' == 1 {
+							
+								** Load
+								cd_nb_stage
+								use join_master_IS, clear
+							
+								** Stats Loop
+								foreach pasty of numlist 12(60)732 {
+									** Lookforward Loop
+									foreach futury of numlist 12(60)732 {
+										
+										** Summary
+										sum R2 if pastm == `pasty' & future_month == `futury'
+										
+										matrix table_is_R[`pasty',`futury'] 	= r(mean)
+										matrix table_is_Sig[`pasty',`futury']	= r(sd)
+										
+											display "The mean is: " r(mean)
+											display "The standard deviation is: " r(sd)
+														
+									} //end floop
+									di "Done with future loop."
+									
+								} //end past loop
+								di "Done with loops."
 						
-						asdf_stocks
+									summarize pastm
+									display "The mean is: " r(mean)
+									display "The standard deviation is: " r(sd)
+									
+								** Save IS R matrix
+								clear
+								svmat double table_is_R, names(futm)
+								gen lookback				= _n
+								order lookback
+								** Reshape
+								rename lookback pastm
+								reshape long futm, i(pastm) j(future_month)
+								rename futm R2
+								drop if R2==.
+								** Plot R2
+								twoway contour R2 pastm future_month, levels(30) zlabel(, format(%9.2f))
+								** Save plot
+								cd_nb_results
+								graph export "contour_plot_IS_R2.png", width(3000)  replace
+
+								** Save IS Sig matrix
+								clear
+								svmat double table_is_Sig, names(futm)
+								gen lookback				= _n
+								order lookback
+								** Reshape
+								rename lookback pastm
+								reshape long futm, i(pastm) j(future_month)
+								rename futm Sig
+								drop if Sig==.
+								** Plot R2
+								twoway contour Sig pastm future_month, levels(30) zlabel(, format(%9.2f))
+								** Save plot
+								cd_nb_results
+								graph export "contour_plot_IS_Sig.png", width(3000)  replace
+
+							} //end if
+							di "Done with IS Plot and Save."
+							
+							** Plot and Save OOS
+							local OOS = 1
+							if `OOS' == 1 {
+							
+								** Load
+								cd_nb_stage
+								use join_master_OOS, clear
+							
+								** Stats Loop
+								foreach pasty of numlist  12(60)732 {
+									** Lookforward Loop
+									foreach futury of numlist  12(60)732 {
+										
+										** Summary
+										sum R2 if pastm == `pasty' & future_month == `futury'
+										
+										matrix table_oos_R[`pasty',`futury'] 	= r(mean)
+										matrix table_oos_Sig[`pasty',`futury']	= r(sd)
+										
+											display "The mean is: " r(mean)
+											display "The standard deviation is: " r(sd)
+														
+									} //end floop
+									di "Done with future loop."
+									
+								} //end past loop
+								di "Done with loops."
 						
+									summarize pastm
+									display "The mean is: " r(mean)
+									display "The standard deviation is: " r(sd)
+									
+								** Save OOS R matrix
+								clear
+								svmat double table_oos_R, names(futm)
+								gen lookback				= _n
+								order lookback
+								** Reshape
+								rename lookback pastm
+								reshape long futm, i(pastm) j(future_month)
+								rename futm R2
+								drop if R2==.
+								** Plot R2
+								twoway contour R2 pastm future_month, levels(30) zlabel(, format(%9.2f))
+								** Save plot
+								cd_nb_results
+								graph export "contour_plot_OOS_R2.png", width(3000)  replace
+
+								** Save OOS Sig matrix
+								clear
+								svmat double table_oos_Sig, names(futm)
+								gen lookback				= _n
+								order lookback
+								** Reshape
+								rename lookback pastm
+								reshape long futm, i(pastm) j(future_month)
+								rename futm Sig
+								drop if Sig==.
+								** Plot R2
+								twoway contour Sig pastm future_month, levels(30) zlabel(, format(%9.2f))
+								** Save plot
+								cd_nb_results
+								graph export "contour_plot_OOS_Sig.png", width(3000)  replace
+
+							} //end if
+							di "Done with OOS Plot and Save."
+							
+							asdf_add beta and DW stat	
+								
+								
+								
+						} //end if
+						di "Done with grid search."
+						
+							
+							asdf_stocks
+							
 						********************************
 						** Bootstrap estimates
 						********************************
