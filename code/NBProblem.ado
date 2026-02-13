@@ -53,10 +53,15 @@ program 			define 	NBProblem
 				ssc install grstyle, replace
 				ssc install palettes, replace
 				ssc install colrspace, replace
-
+		
 			} //End if
 			di "Done with graph install."
 
+			** Range join for MFP productivity - not used
+			* Install rangejoin if not already present
+			//ssc install rangejoin
+			//ssc install rangestat
+			
 		} //End if
 		di "Done with packages install."
 
@@ -139,6 +144,9 @@ program 			define 	NBProblem
 		***********************************************************
 		scalar load	= 1
 		if load == 1 {
+			
+			** Download data
+			download_prod_fred
 			
 			** Run twice 	- first annual treasury data
 			** 				- second to prep monthly treasuries
@@ -1066,7 +1074,7 @@ program 			define 	NBProblem
 							local counnt 		= 1
 							
 							** Crude MC search by incrementing seed	
-							foreach seed of numlist 1/10 {
+							foreach seed of numlist 1/2 {
 								
 								
 								** Reload
@@ -1084,19 +1092,28 @@ program 			define 	NBProblem
 									*matrix list table_is
 									
 								** Check observations
-								*TRFmo "stock" 780 780 2024 12 1 101 // 42 monthly obs
-								*TRFmo "stock" 420 600 2024 12 1 101 // 276 monthly obs
+								TRFmox "stock" 120 120 2024 12 1 101 // 276 monthly obs
+									scalar list r2_0 r2_1 beta dw	
 									
+								asdf_combined
+								
+								TRFmo "stock" 500 600 2024 12 1 101 // 276 monthly obs
+									scalar list r2_0 r2_1 beta dw	
+								
+								
+								
 								** Lookback Loop
-								foreach pasty of numlist 12(60)732 {
+								foreach pasty of numlist 12(60)72 {
 									** Lookforward Loop
 									foreach futury of numlist 12(60)732 {
 										
 										** TRR "stock" years_future years_past cpi_year cpi_month min_n 
 										TRFmo "stock" `futury' `pasty' 2024 12 1 `seed' //11111
 										
-										matrix table_oos[`pasty',`futury'] 	= r2_0
-										matrix table_is[`pasty',`futury']	= r2_1
+										matrix table_oos[`pasty',`futury'] 		= r2_0
+										matrix table_is[`pasty',`futury']		= r2_1
+										matrix table_is_beta[`pasty',`futury'] 	= beta
+										matrix table_is_dw[`pasty',`futury']	= dw
 											
 									} //end floop
 									di "Done with future loop."
@@ -1208,8 +1225,8 @@ program 			define 	NBProblem
 							matrix table_oos_Sig 	= 	table_oos
 							matrix table_is_Sig		= 	table_oos
 							** Beta and DW
-							matrix table_is_Beta	= 	table_oos
-							matrix table_is_DW		= 	table_oos
+							matrix table_is_beta	= 	table_oos
+							matrix table_is_dw		= 	table_oos
 							
 							** Plot and Save IS
 							local IS = 1
@@ -1229,6 +1246,8 @@ program 			define 	NBProblem
 										
 										matrix table_is_R[`pasty',`futury'] 	= r(mean)
 										matrix table_is_Sig[`pasty',`futury']	= r(sd)
+										matrix table_is_beta[`pasty',`futury'] 	= beta
+										matrix table_is_dw[`pasty',`futury']	= dw
 										
 											display "The mean is: " r(mean)
 											display "The standard deviation is: " r(sd)
@@ -1345,9 +1364,7 @@ program 			define 	NBProblem
 							} //end if
 							di "Done with OOS Plot and Save."
 							
-							asdf_add beta and DW stat	
-								
-								
+							
 								
 						} //end if
 						di "Done with grid search."
@@ -1448,7 +1465,8 @@ program 			define 	NBProblem
 					** TRF "asset" 		years_future years_past 	cpi_year cpi_month min_n seed 
 					** TRFmo "asset" 	months_future months_past 	cpi_year cpi_month min_n seed
 					TRF "house" 	19 	1 	2024 12 679 1011111
-					TRFmo "house" 	228 12 	2024 12 679 1011111
+					TRFmo "house" 	228 1 	2024 12 679 1011111
+					TRFmox "house" 	228 1 	2024 12 679 1011111
 					
 					********************************
 					** Gridsearch Years House CAPE - R-squared 
@@ -1587,6 +1605,7 @@ program 			define 	NBProblem
 					
 					** TRR "stock" years_future years_past cpi_year cpi_month min_n 
 					TRFmo "house" 336 0 2024 12 679 1011 //11111
+					TRFmox "house" 336 0 2024 12 679 1011 //11111
 					*bootstrap att = r2_0, reps(50) seed(1011): TRFmo "house" 336 1 2024 12 679 1011
 	
 					** Bootstrap 95% CI for OOS R-squared

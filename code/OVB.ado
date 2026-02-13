@@ -142,7 +142,7 @@ program 			define 	OVB, rclass
 		
 		set seed 111
 		
-		set obs 10000000
+		set obs 100000
 		
 		** Gen iid stn errors - loop
 		foreach num of numlist 0/13 {
@@ -282,6 +282,15 @@ program 			define 	OVB, rclass
 			
 			** Verify F
 			reg x_12 u_0
+			
+			** For Symbolic regression:
+			keep x_13 x_12-x_1
+			cd_nb_stage
+			save symbol_data, replace
+			export delimited sybol_data.csv, replace
+			
+			** Check reverse
+			reg x_1 x_13 x_12-x_2 //0.3236 R-squared
 		
 		} //end if
 		di "Done with instru."

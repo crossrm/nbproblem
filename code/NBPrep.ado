@@ -201,6 +201,155 @@ program 			define 	NBPrep
 			} //end if
 			di "Done with Jorda data."
 			
+			****************
+			** Gordon - productivity
+			** FRED - productivity
+			****************
+			scalar gordon = 1
+			if gordon == 1 {
+					
+				** Paste and save 
+				** Table 4 - New data
+				*cd_nb_source
+				*save Gordon_MFP, replace
+				
+				** Load
+				cd_nb_source
+				use Gordon_MFP, clear
+				rename from year
+				gen month 				= 1
+				
+				** Save for join
+				order year month to labor 
+				keep year month to labor 
+				cd_nb_stage
+				save gordon_join, replace
+				
+				
+				** Generate early years and join labor
+				use monthly_panel, clear
+				keep if year >= 1891 & year<=1947
+				
+				* Join ranges
+				cd_nb_stage
+				joinby year month using gordon_join.dta, unmatched(master)
+				
+				** Create target variable
+				gen match 			= (labor~=.)
+				gen sum_match		= sum(match)
+				gen float target	= 0
+				gen float index		= 100
+				sort year month
+				gen obs				= _n
+				rename labor mp
+				levelsof obs, local(MO)
+				** Counter
+				local k				= 1
+				local index			= 100
+				** Loop= 1		
+				foreach m in `MO' {
+					
+						di "Month: `m', count k: `k'."
+
+					** Load and update labor value
+					sum mp if obs==`m'
+					local cellval 		= r(mean) / 12
+					
+						di "Cellval: `cellval'."
+						
+					** Update Prod level
+					if `cellval' ~=. {
+						
+							di "In if: `cellval'."
+						
+						local Prod = `cellval'
+						
+					} //end if
+					di "Done with if."
+					
+						di "Prod value: `Prod'."
+					
+					replace target		 	= `Prod' in `k'
+					
+					** Update index
+					if `m' > 1 {
+						
+						local index			= `index' * (1 + `Prod'/100)
+						replace index		= `index' in `k'
+						
+					} //end if
+					di "Done with index update."
+										
+					** Advance counter
+					local k 				= `k' + 1
+						
+				} //end loop
+				di "Done with fill."
+				
+				** Clean update
+				keep year month target index
+				rename index prod_index
+				rename target prod
+				
+				** Save for monthly join
+				cd_nb_stage
+				save gordon_month_join, replace
+				use gordon_month_join, clear
+				
+				** FRED BLS productivity
+				
+				** Quarterly
+				cd_nb_stage
+				use monthly_panel, clear
+				gen quarter				= 1
+				replace quarter				= quarter + (month>=4)
+				replace quarter				= quarter + (month>=7)
+				replace quarter				= quarter + (month>=10)
+		
+				** Save quarterly
+				cd_nb_stage
+				save quarterly_panel, replace
+				use quarterly_panel, clear
+		
+				** Join fred
+				cd_nb_stage
+				joinby year quarter using productivity_fred, unmatched(master)
+					tab _merge
+					drop _merge
+				** Join Gordon 
+				cd_nb_stage
+				joinby year month using gordon_month_join, unmatched(master)
+					tab _merge
+					drop _merge
+				
+				** Normalize Gordon to FRED index
+				** First quarter of 1947 (overlap)
+				sum productivity_index if year == 1947 & quarter==1
+				local fred				= r(mean)	
+				sum prod_index if year == 1947 & quarter==1
+				local gordon			= r(mean)	
+				** Norm
+				replace prod_index		= prod_index / `gordon' * `fred'
+				
+					** Check
+					sum productivity_index if year == 1947 & quarter==1
+					local fred				= r(mean)	
+					sum prod_index if year == 1947 & quarter==1
+					local gordon			= r(mean)	
+						di "Gordon now: `gordon', Fred now: `fred'. Should match."
+				
+				replace prod_index			= productivity_index if productivity_index ~=. 
+				drop if prod_index ==.
+				
+				** Clean and save
+				keep year month prod_index
+				cd_nb_stage
+				save productivity_monthly_join, replace
+				use productivity_monthly_join, clear
+				
+			} //end if
+			di "Done with Gordon data."
+			
 			***************
 			** Kuvshinov - 1899-2016 - equity market cap
 			** Siblis 2017-2024
@@ -1668,6 +1817,13 @@ program 			define 	NBPrep
 				** Percentage units
 				replace r_house					= r_house * 100
 				
+				** Productivity
+				cd_nb_stage
+				joinby year month using productivity_monthly_join, unmatched(master)
+					tab _merge
+					drop _merge
+				rename prod_index lab_prod
+				
 				** Save
 				cd_nb_stage
 				save analysis_data, replace
@@ -1675,7 +1831,7 @@ program 			define 	NBPrep
 				
 				** Save CPI, GDP, POP for Covariate run - 2nd run
 				cd_nb_stage
-				savesome year month cpi gdp pop r_price r_priceR using treas_covariates, replace
+				savesome year month cpi gdp pop r_price r_priceR lab_prod using treas_covariates, replace
 				use treas_covariates, clear
 				
 				** Housing CAPE prep

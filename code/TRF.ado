@@ -86,7 +86,7 @@ program 			define 	TRF
 		*di "Start Excess: `years_past'."
 	
 	** Excess cape - see Shiller ie_data "Q" - past inflation
-	quietly gen ex_cape						= 1/ca_cape - (r_bond/100 - ((cpi / L`years_past'.cpi)^(1/10)-1))
+	quietly gen ex_cape						= 1/ca_cape - (r_bond/100 - ((cpi / L`years_past'.cpi)^(1/`years_past')-1))
 	
 	** Real total bond returns - no large lags - 1200 is from the 10-year bond (12 mo x 10 yrs )
 	quietly gen mo_bond						= (r_bond/F.r_bond + r_bond/1200 + ((1+F.r_bond/1200)^(-119))*(1-r_bond/F.r_bond))
@@ -94,8 +94,8 @@ program 			define 	TRF
 	quietly replace trtnp_bondr				= L.trtnp_bondr * L.mo_bond * L.cpi / cpi if n>1
 		
 	** Future target and bond returns - future years
-	quietly gen rtns_`targetvar'r			= (F`years_future'.trtnp_`targetvar'r / trtnp_`targetvar'r)^(1/10)-1
-	quietly gen rtns_bondr					= (F`years_future'.trtnp_bondr / trtnp_bondr)^(1/10)-1
+	quietly gen rtns_`targetvar'r			= (F`years_future'.trtnp_`targetvar'r / trtnp_`targetvar'r)^(1/`years_future')-1
+	quietly gen rtns_bondr					= (F`years_future'.trtnp_bondr / trtnp_bondr)^(1/`years_future')-1
 	quietly gen ex_return					= rtns_`targetvar'r - rtns_bondr
 	
 		order n year month p_`targetvar'* dividend* earnings* cpi r_bond trtnp_* mo_* ma_* ca_*  ex_* rtns*

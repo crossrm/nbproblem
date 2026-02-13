@@ -8,8 +8,8 @@
 
 ***********************************************************
 ***********************************************************
-capture program 	drop 	TRFmo
-program 			define 	TRFmo, rclass
+capture program 	drop 	TRFmox
+program 			define 	TRFmox, rclass
 
 	** Read inputs
 	local targetvar 			= "`1'"
@@ -60,7 +60,7 @@ program 			define 	TRFmo, rclass
 	//local months_past = `months_past'*12
 	
 	** Prep
-	order n year month p_`targetvar' dividend earnings cpi r_bond
+		order n year month p_`targetvar' dividend earnings cpi r_bond lab_prod gdp pop
 		*sum n year month p_`targetvar' dividend earnings cpi r_bond
 								
 	** Gen real total return price 
@@ -79,6 +79,7 @@ program 			define 	TRFmo, rclass
 	quietly gen earningsr					= earnings * `curr_cpi' / cpi
 	quietly gen p_`targetvar'r				= p_`targetvar' * `curr_cpi' / cpi
 		*di "Start CAPE: `targetvar'."
+	quietly gen gdpr						= gdp * `curr_cpi' / cpi
 	
 	** Cyclically adjusted CAPE - past earnings
 	* Current earnings if past months are zero
@@ -106,17 +107,32 @@ program 			define 	TRFmo, rclass
 		** If not smoothing -- Inflation rate over most recent period
 		//quietly gen ex_cape						= 1/ca_cape - (r_bond/100 - ((cpi / L1.cpi)^(1/10)-1))
 		quietly gen ex_cape						= 1/ca_cape - (r_bond/100 - ((cpi / L1.cpi)^(1/1)-1))
+		
+		** Past annual (actual) growth rates of conditioning variables
+		quietly gen g_pop						= (pop / L.pop)^(1/1)-1
+		quietly gen g_gdpr						= (gdpr / L.gdpr)^(1/1)-1
+		quietly gen g_prod						= (lab_prod / L.lab_prod)^(1/1)-1
+		quietly gen g_infl						= (cpi / L.cpi)^(1/1)-1
+		quietly gen g_earnr						= (earningsr / L.earningsr)^(1/1)-1
 	
 	} //end if
 	else {
 		
 		** If smoothing -- Inflation rate over earnings smoothing period
+		//quietly gen ex_cape						= 1/ca_cape - (r_bond/100 - ((cpi / L`months_past'.cpi)^(1/10)-1))
 		quietly gen ex_cape						= 1/ca_cape - (r_bond/100 - ((cpi / L`months_past'.cpi)^(1/`months_past'*12)-1))
+		
+		** Past annual (actual) growth rates of conditioning variables
+		quietly gen g_pop						= (pop / L`months_past'.pop)^(1/`months_future'*12)-1
+		quietly gen g_gdpr						= (gdpr / L`months_past'.gdpr)^(1/`months_past'*12)-1
+		quietly gen g_prod						= (lab_prod / L`months_past'.lab_prod)^(1/`months_past'*12)-1
+		quietly gen g_infl						= (cpi / L`months_past'.cpi)^(1/`months_past'*12)-1
+		quietly gen g_earnr						= (earningsr / L`months_past'.earningsr)^(1/`months_past'*12)-1
 		
 	} //end if
 	di "Done with ex_cape."
 	
-	** Real total bond returns - no large lags - 1200 is from the 10-year bond (12 mo x 10 yrs )
+	** Real total bond returns - no large lags - 1200 is from the 10-year bond (12 mo x 10 yrs)
 	quietly gen mo_bond						= (r_bond/F.r_bond + r_bond/1200 + ((1+F.r_bond/1200)^(-119))*(1-r_bond/F.r_bond))
 	quietly gen trtnp_bondr					= 1
 	quietly replace trtnp_bondr				= L.trtnp_bondr * L.mo_bond * L.cpi / cpi if n>1
@@ -126,11 +142,23 @@ program 			define 	TRFmo, rclass
 	quietly gen rtns_bondr					= (F`months_future'.trtnp_bondr / trtnp_bondr)^(1/`months_future'*12)-1
 	quietly gen ex_return					= rtns_`targetvar'r - rtns_bondr
 	
-		order n year month p_`targetvar'* dividend* earnings* cpi r_bond trtnp_* mo_* ma_* ca_*  ex_* rtns*
+	** Future annual (actual) growth rates of conditioning variables
+	quietly gen f_pop						= (F`months_future'.pop / pop)^(1/`months_future'*12)-1
+	quietly gen f_gdpr						= (F`months_future'.gdp / gdp)^(1/`months_future'*12)-1
+	quietly gen f_prod						= (F`months_future'.lab_prod / lab_prod)^(1/`months_future'*12)-1
+	quietly gen f_infl						= (F`months_future'.cpi / cpi)^(1/`months_future'*12)-1
+	quietly gen f_earnr						= (F`months_future'.earningsr / earningsr)^(1/`months_future'*12)-1
+			
+		order n year month p_`targetvar'* dividend* earnings* cpi r_bond trtnp_* mo_* ma_* ca_*  ex_* rtns* lab_prod gdpr pop f_* g_*
 		
 	** Temp save
 	cd_nb_stage
 	save temp_trf, replace
+	use temp_trf, clear
+	
+		** Look corr
+		corr ex_return ex_cape f_* lab_prod gdpr pop cpi earningsr g_*
+		sum ex_return ex_cape f_* lab_prod gdpr pop cpi earningsr g_*
 	
 	** Confirm reg (R-squared 28.99 1380 obs)
 	//reg ex_return ex_cape 
@@ -138,6 +166,9 @@ program 			define 	TRFmo, rclass
 	** Sa
 	keep if n >= `min_n'
 	reg ex_return ex_cape if (incl)
+	reg ex_return ex_cape lab_prod gdpr pop cpi earningsr if (incl)
+	reg ex_return ex_cape f_* if (incl)
+	reg ex_return ex_cape g_* if (incl)
 	
 	** Record Durbin-Watson
 	estat dwatson
@@ -158,7 +189,7 @@ program 			define 	TRFmo, rclass
 	use temp_trf, clear
 					
 	** Clean up
-	drop incl trtnp_* dividendr earningsr ma_* ca_* ex_* mo_* rtns_* p_`targetvar'r	
+	drop incl trtnp_* dividendr earningsr ma_* ca_* ex_* mo_* rtns_* p_`targetvar'r	f_* g_* gdpr
 	
 	** Return values (rclass program)
 	return scalar r2_0 		= r2_0
